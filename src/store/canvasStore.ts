@@ -34,6 +34,7 @@ interface CanvasState {
     value: unknown,
   ) => void;
   removeInstance: (id: string) => void;
+  removeInstances: (ids: string[]) => void;
 
   // Pointer connections
   connections: PointerConnection[];
@@ -234,6 +235,18 @@ export const useCanvasStore = create<CanvasState>()(
           connections: state.connections.filter(
             (conn) =>
               conn.sourceInstanceId !== id && conn.targetInstanceId !== id,
+          ),
+        }));
+      },
+
+      removeInstances: (ids: string[]) => {
+        get().saveHistory();
+        set((state) => ({
+          instances: state.instances.filter((inst) => !ids.includes(inst.id)),
+          connections: state.connections.filter(
+            (conn) =>
+              !ids.includes(conn.sourceInstanceId) &&
+              !ids.includes(conn.targetInstanceId),
           ),
         }));
       },

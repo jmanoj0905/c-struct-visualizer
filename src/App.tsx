@@ -40,6 +40,15 @@ import Sidebar from "./components/Sidebar";
 import Settings from "./components/Settings";
 import { useCanvasStore } from "./store/canvasStore";
 import { canConnectPointer, resolveTypeName } from "./parser/structParser";
+import { analyzeGraph, CircularPattern } from "./utils/graphAnalysis";
+import {
+  layoutSelfLoop,
+  layoutDoublyLinked,
+  layoutCircularList,
+  layoutGeneralCycle,
+  combineLayouts,
+  type LayoutResult,
+} from "./utils/circularLayouts";
 
 const nodeTypes = {
   structNode: StructNode,
@@ -60,6 +69,7 @@ function FlowCanvas() {
     addConnection,
     removeConnection,
     removeInstance,
+    removeInstances,
     connections,
     clearAll,
     undo,
@@ -250,7 +260,7 @@ function FlowCanvas() {
       animated: isHighlighted,
       style: {
         stroke: isHighlighted ? "#3b82f6" : "#374151",
-        strokeWidth: isHighlighted ? 3 : 2,
+        strokeWidth: isHighlighted ? 4 : 3,
         cursor: "pointer",
         strokeDasharray: "0",
         opacity: highlightedPath.size > 0 && !isHighlighted ? 0.2 : 1,
@@ -354,9 +364,8 @@ function FlowCanvas() {
             type: "confirm",
             message: `Delete ${selectedNodes.length} selected node${selectedNodes.length > 1 ? "s" : ""}?`,
             onConfirm: () => {
-              selectedNodes.forEach((node) => {
-                removeInstance(node.id);
-              });
+              const nodeIds = selectedNodes.map((node) => node.id);
+              removeInstances(nodeIds);
               showAlert({
                 type: "success",
                 message: `Deleted ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
@@ -769,28 +778,16 @@ function FlowCanvas() {
     [instances, structDefinitions, addConnection, setEdges, connections],
   );
 
-  // Handle edge click for deletion (left-click)
-  const handleEdgeClick = useCallback(
-    (_: React.MouseEvent, edge: Edge) => {
-      showAlert({
-        type: "confirm",
-        message: "Remove this pointer connection?",
-        onConfirm: () => {
-          if (edge.data?.connectionId) {
-            removeConnection(edge.data.connectionId as string);
-            showAlert({
-              type: "success",
-              message: "Connection removed",
-              duration: 2000,
-            });
-          }
-        },
-        confirmText: "Remove",
-        cancelText: "Cancel",
-      });
-    },
-    [removeConnection],
-  );
+  // Handle edge click for highlighting source and target nodes (left-click)
+  const handleEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    // Highlight both the source and target nodes
+    const sourceId = edge.source;
+    const targetId = edge.target;
+
+    if (sourceId && targetId) {
+      setHighlightedPath(new Set([sourceId, targetId]));
+    }
+  }, []);
 
   // Handle edge context menu (right-click) for deletion
   const handleEdgeContextMenu = useCallback(
@@ -892,15 +889,23 @@ function FlowCanvas() {
 
     const elk = new ELK();
 
-    // Separate connected nodes from orphaned nodes
+    // Analyze graph for circular structures
+    const graphMetrics = analyzeGraph(instances, connections);
+
+    // Separate nodes into: SCCs (circular), acyclic connected, and orphaned
+    const sccNodeIds = new Set<string>();
+    graphMetrics.sccs.forEach((scc) => {
+      scc.ids.forEach((id) => sccNodeIds.add(id));
+    });
+
     const connectedNodeIds = new Set<string>();
     connections.forEach((conn) => {
       connectedNodeIds.add(conn.sourceInstanceId);
       connectedNodeIds.add(conn.targetInstanceId);
     });
 
-    const connectedInstances = instances.filter((inst) =>
-      connectedNodeIds.has(inst.id),
+    const acyclicInstances = instances.filter(
+      (inst) => connectedNodeIds.has(inst.id) && !sccNodeIds.has(inst.id),
     );
     const orphanedInstances = instances.filter(
       (inst) => !connectedNodeIds.has(inst.id),
@@ -908,9 +913,34 @@ function FlowCanvas() {
 
     try {
       let maxY = 100;
+      const circularLayouts: LayoutResult[] = [];
 
-      // Layout connected nodes if any exist
-      if (connectedInstances.length > 0 && connections.length > 0) {
+      // Layout each SCC with appropriate circular layout
+      for (const scc of graphMetrics.sccs) {
+        let layout: LayoutResult;
+
+        switch (scc.pattern) {
+          case CircularPattern.SELF_LOOP:
+            layout = layoutSelfLoop(scc, instances, connections);
+            break;
+          case CircularPattern.BIDIRECTIONAL:
+            layout = layoutDoublyLinked(scc, instances, connections);
+            break;
+          case CircularPattern.CIRCULAR_LIST:
+            layout = layoutCircularList(scc, instances, connections);
+            break;
+          case CircularPattern.GENERAL_CYCLE:
+            layout = layoutGeneralCycle(scc, instances, connections);
+            break;
+          default:
+            continue;
+        }
+
+        circularLayouts.push(layout);
+      }
+
+      // Layout acyclic nodes with ELK if any exist
+      if (acyclicInstances.length > 0 && connections.length > 0) {
         // Helper to get field order for priority calculation
         const getFieldIndex = (
           instanceId: string,
@@ -938,48 +968,53 @@ function FlowCanvas() {
               fieldName.match(/\[(\d+)\]/)?.[1] || "0",
               10,
             );
-            return fieldIndex * 1000 + arrayIndex; // Scale to preserve both field and array order
+            return fieldIndex * 1000 + arrayIndex;
           }
 
           return fieldIndex * 1000;
         };
+
+        // Only edges between acyclic nodes for ELK
+        const acyclicNodeSet = new Set(acyclicInstances.map((i) => i.id));
+        const acyclicConnections = connections.filter(
+          (c) =>
+            acyclicNodeSet.has(c.sourceInstanceId) &&
+            acyclicNodeSet.has(c.targetInstanceId),
+        );
 
         const elkGraph = {
           id: "root",
           layoutOptions: {
             "elk.algorithm": "layered",
             "elk.direction": "RIGHT",
-            "elk.spacing.nodeNode": "250", // Very large spacing to prevent overlap
-            "elk.layered.spacing.nodeNodeBetweenLayers": "450", // Very large spacing between layers
-            "elk.padding": "[120,120,120,120]", // Large padding
+            "elk.spacing.nodeNode": "250",
+            "elk.layered.spacing.nodeNodeBetweenLayers": "450",
+            "elk.padding": "[120,120,120,120]",
             "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
             "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
             "elk.considerModelOrder.strategy": "PREFER_EDGES",
-            "elk.spacing.edgeNode": "150", // Large edge to node spacing
-            "elk.spacing.edgeEdge": "80", // Large edge to edge spacing
-            "elk.layered.spacing.edgeNodeBetweenLayers": "150", // Large spacing
-            "elk.layered.spacing.baseValue": "180", // Larger base spacing value
-            "elk.separateConnectedComponents": "true", // Separate disconnected components
+            "elk.spacing.edgeNode": "150",
+            "elk.spacing.edgeEdge": "80",
+            "elk.layered.spacing.edgeNodeBetweenLayers": "150",
+            "elk.layered.spacing.baseValue": "180",
+            "elk.separateConnectedComponents": "true",
           },
-          children: connectedInstances.map((instance) => {
-            // Calculate height based on number of fields for more accurate layout
+          children: acyclicInstances.map((instance) => {
             const struct = structDefinitions.find(
               (s) => s.name === instance.structName,
             );
             const fieldCount = struct?.fields.length || 0;
-            const baseHeight = 100; // Header + padding
-            const fieldHeight = 80; // Approximate height per field (increased for new design)
+            const baseHeight = 100;
+            const fieldHeight = 80;
             const calculatedHeight = baseHeight + fieldCount * fieldHeight;
 
             return {
               id: instance.id,
-              width: 350, // Increased width for new card design
+              width: 350,
               height: Math.max(250, calculatedHeight),
             };
           }),
-          edges: connections.map((conn, index) => {
-            // Calculate priority based on source field order
-            // Lower field index = higher priority (appears higher)
+          edges: acyclicConnections.map((conn, index) => {
             const fieldOrder = getFieldIndex(
               conn.sourceInstanceId,
               conn.sourceFieldName,
@@ -998,33 +1033,51 @@ function FlowCanvas() {
 
         const layout = await elk.layout(elkGraph);
 
-        // Apply calculated positions for connected nodes
+        // Apply calculated positions for acyclic nodes
         layout.children?.forEach((node) => {
           if (node.x !== undefined && node.y !== undefined) {
             updateInstancePosition(node.id, {
               x: node.x,
               y: node.y,
             });
-            // Track max Y for orphaned nodes placement - use actual node height
             const nodeHeight = node.height || 200;
             maxY = Math.max(maxY, node.y + nodeHeight);
           }
         });
       }
 
-      // Layout orphaned nodes below in a grid with increased spacing
+      // Combine and apply circular layouts
+      if (circularLayouts.length > 0) {
+        const combined = combineLayouts(circularLayouts, {
+          horizontalGap: 500,
+          verticalGap: 400,
+        });
+
+        // Position circular layouts below acyclic layout
+        const circularStartY = maxY + 400;
+
+        combined.positions.forEach((pos, id) => {
+          updateInstancePosition(id, {
+            x: pos.x + 120,
+            y: pos.y + circularStartY,
+          });
+        });
+
+        maxY = circularStartY + combined.bounds.height;
+      }
+
+      // Layout orphaned nodes below in a grid
       if (orphanedInstances.length > 0) {
-        const orphanStartY = maxY + 400; // Large spacing between flows
+        const orphanStartY = maxY + 400;
         const orphanStartX = 120;
-        const spacing = 500; // Large horizontal spacing to prevent overlap
-        const rowSpacing = 450; // Large vertical spacing to prevent overlap
+        const spacing = 500;
+        const rowSpacing = 450;
         const nodesPerRow = 3;
 
         orphanedInstances.forEach((instance, index) => {
           const row = Math.floor(index / nodesPerRow);
           const col = index % nodesPerRow;
 
-          // Calculate height for better spacing
           const struct = structDefinitions.find(
             (s) => s.name === instance.structName,
           );
@@ -1041,9 +1094,9 @@ function FlowCanvas() {
         });
       }
     } catch (error) {
-      console.error("ELK layout error:", error);
+      console.error("Layout error:", error);
     }
-  }, [instances, connections, updateInstancePosition]);
+  }, [instances, connections, updateInstancePosition, structDefinitions]);
 
   // Handle drag and drop from sidebar
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -1270,6 +1323,15 @@ function FlowCanvas() {
 
       {/* Bottom-right buttons */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-10">
+        {/* Fit to window button */}
+        <button
+          onClick={() => fitView({ padding: 0.2, duration: 300 })}
+          className="bg-[#80DEEA] hover:bg-[#4DD0E1] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
+          title="Fit to window"
+        >
+          <Maximize2 size={22} strokeWidth={2.5} />
+        </button>
+
         {/* Cleanup layout button */}
         <button
           onClick={handleCleanupLayout}
