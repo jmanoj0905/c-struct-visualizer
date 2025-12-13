@@ -15,6 +15,7 @@ import {
 import { useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import type { CStruct } from "../types";
+import { getStructColor } from "../utils/colors";
 
 interface SidebarProps {
   onEditStruct: (structName: string) => void;
@@ -347,55 +348,59 @@ const Sidebar = ({
         </div>
 
         <div className="space-y-2">
-          {structDefinitions.map((struct) => (
-            <div
-              key={struct.name}
-              draggable
-              onDragStart={(e) => handleDragStart(e, struct.name)}
-              onDoubleClick={() => onAddInstance(struct.name)}
-              className="group bg-[#E0BBE4] border-3 border-black rounded-none p-2.5 cursor-move transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 relative"
-            >
-              {/* 6-dot drag indicator */}
-              <div className="text-black flex-shrink-0">
-                <GripVertical size={18} strokeWidth={2.5} />
-              </div>
-
-              {/* Struct info */}
-              <div className="flex-1 min-w-0">
-                <div className="font-mono font-bold text-xs truncate">
-                  {struct.name}
+          {structDefinitions.map((struct) => {
+            const structColor = getStructColor(struct.name);
+            return (
+              <div
+                key={struct.name}
+                draggable
+                onDragStart={(e) => handleDragStart(e, struct.name)}
+                onDoubleClick={() => onAddInstance(struct.name)}
+                className="group border-3 border-black rounded-none p-2.5 cursor-move transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 relative"
+                style={{ backgroundColor: structColor }}
+              >
+                {/* 6-dot drag indicator */}
+                <div className="text-black flex-shrink-0">
+                  <GripVertical size={18} strokeWidth={2.5} />
                 </div>
-                <div className="text-xs font-semibold text-gray-700 mt-0.5">
-                  {struct.fields.length} field
-                  {struct.fields.length !== 1 ? "s" : ""}
+
+                {/* Struct info */}
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono font-bold text-xs truncate">
+                    {struct.name}
+                  </div>
+                  <div className="text-xs font-semibold text-gray-700 mt-0.5">
+                    {struct.fields.length} field
+                    {struct.fields.length !== 1 ? "s" : ""}
+                  </div>
+                </div>
+
+                {/* Action buttons on hover */}
+                <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditStruct(struct.name);
+                    }}
+                    className="p-1.5 bg-blue-300 border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                    title="Edit"
+                  >
+                    <Edit2 size={12} strokeWidth={2.5} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteStruct(struct.name);
+                    }}
+                    className="p-1.5 bg-red-300 border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                    title="Delete"
+                  >
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
                 </div>
               </div>
-
-              {/* Action buttons on hover */}
-              <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditStruct(struct.name);
-                  }}
-                  className="p-1.5 bg-blue-300 border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
-                  title="Edit"
-                >
-                  <Edit2 size={12} strokeWidth={2.5} />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteStruct(struct.name);
-                  }}
-                  className="p-1.5 bg-red-300 border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
-                  title="Delete"
-                >
-                  <X size={12} strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Create New Struct Button */}
           <button

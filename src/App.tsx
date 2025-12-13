@@ -2,7 +2,6 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
-  Controls,
   type Connection,
   type Edge,
   type Node,
@@ -28,10 +27,11 @@ import {
   Move,
   Undo,
   Redo,
+  Maximize2,
 } from "lucide-react";
 import { toPng } from "html-to-image";
 import ELK from "elkjs/lib/elk.bundled.js";
-import toast, { Toaster } from "react-hot-toast";
+import AlertContainer, { showAlert } from "./components/AlertContainer";
 
 import StructNode from "./components/StructNode";
 import StructEditor from "./components/StructEditor";
@@ -51,7 +51,7 @@ const edgeTypes = {
 
 function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const {
     instances,
     structDefinitions,
@@ -145,7 +145,10 @@ function FlowCanvas() {
       })
       .catch((err) => {
         console.error("Failed to export image:", err);
-        toast.error("Failed to export image. Please try again.");
+        showAlert({
+          type: "error",
+          message: "Failed to export image. Please try again.",
+        });
       });
   }, []);
 
@@ -347,43 +350,22 @@ function FlowCanvas() {
         if (selectedNodes.length > 0) {
           event.preventDefault();
 
-          toast(
-            (t) => (
-              <div className="flex flex-col gap-2">
-                <p className="font-medium">
-                  Delete {selectedNodes.length} selected node
-                  {selectedNodes.length > 1 ? "s" : ""}?
-                </p>
-                <div className="flex gap-2 justify-end">
-                  <button
-                    onClick={() => {
-                      toast.dismiss(t.id);
-                    }}
-                    className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      selectedNodes.forEach((node) => {
-                        removeInstance(node.id);
-                      });
-                      toast.dismiss(t.id);
-                      toast.success(
-                        `Deleted ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
-                      );
-                    }}
-                    className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ),
-            {
-              duration: 5000,
+          showAlert({
+            type: "confirm",
+            message: `Delete ${selectedNodes.length} selected node${selectedNodes.length > 1 ? "s" : ""}?`,
+            onConfirm: () => {
+              selectedNodes.forEach((node) => {
+                removeInstance(node.id);
+              });
+              showAlert({
+                type: "success",
+                message: `Deleted ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
+                duration: 2000,
+              });
             },
-          );
+            confirmText: "Delete",
+            cancelText: "Cancel",
+          });
         }
       }
 
@@ -494,7 +476,11 @@ function FlowCanvas() {
             selected: true,
           })),
         );
-        toast.success(`Selected all ${nodes.length} nodes`, { duration: 2000 });
+        showAlert({
+          type: "success",
+          message: `Selected all ${nodes.length} nodes`,
+          duration: 2000,
+        });
         return;
       }
 
@@ -584,13 +570,15 @@ function FlowCanvas() {
         const { nodeIds, hasCircular } = calculatePointerPath(node.id);
         setHighlightedPath(nodeIds);
 
-        // Show toast if circular reference detected
+        // Show alert if circular reference detected
         if (hasCircular) {
           setTimeout(() => {
-            toast.error(
-              "Circular reference detected! This pointer path contains a circular reference where a node points back to itself or a previous node in the chain.",
-              { duration: 4000 },
-            );
+            showAlert({
+              type: "error",
+              message:
+                "Circular reference detected! This pointer path contains a circular reference where a node points back to itself or a previous node in the chain.",
+              duration: 4000,
+            });
           }, 100);
         }
       }
@@ -686,7 +674,10 @@ function FlowCanvas() {
       );
 
       if (!sourceField || !sourceField.isPointer) {
-        toast.error("Only pointer fields can create connections!");
+        showAlert({
+          type: "error",
+          message: "Only pointer fields can create connections!",
+        });
         return;
       }
 
@@ -708,10 +699,11 @@ function FlowCanvas() {
       );
 
       if (!canConnectPointer(resolvedPointerType, resolvedTargetType)) {
-        toast.error(
-          `Type mismatch! ${sourceField.type}* cannot point to struct ${targetInstance.structName}. Make sure pointer types match the target struct.`,
-          { duration: 4000 },
-        );
+        showAlert({
+          type: "error",
+          message: `Type mismatch! ${sourceField.type}* cannot point to struct ${targetInstance.structName}. Make sure pointer types match the target struct.`,
+          duration: 4000,
+        });
         return;
       }
 
@@ -723,10 +715,11 @@ function FlowCanvas() {
       );
 
       if (existingConnection) {
-        toast.error(
-          `This pointer is already connected! A pointer can only have one connection. Remove the existing connection first (right-click on the arrow).`,
-          { duration: 4000 },
-        );
+        showAlert({
+          type: "error",
+          message: `This pointer is already connected! A pointer can only have one connection. Remove the existing connection first (right-click on the arrow).`,
+          duration: 4000,
+        });
         return;
       }
 
@@ -779,34 +772,22 @@ function FlowCanvas() {
   // Handle edge click for deletion (left-click)
   const handleEdgeClick = useCallback(
     (_: React.MouseEvent, edge: Edge) => {
-      toast(
-        (t) => (
-          <div className="flex flex-col gap-2">
-            <p className="font-medium">Remove this pointer connection?</p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => toast.dismiss(t.id)}
-                className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (edge.data?.connectionId) {
-                    removeConnection(edge.data.connectionId as string);
-                    toast.dismiss(t.id);
-                    toast.success("Connection removed");
-                  }
-                }}
-                className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ),
-        { duration: 5000 },
-      );
+      showAlert({
+        type: "confirm",
+        message: "Remove this pointer connection?",
+        onConfirm: () => {
+          if (edge.data?.connectionId) {
+            removeConnection(edge.data.connectionId as string);
+            showAlert({
+              type: "success",
+              message: "Connection removed",
+              duration: 2000,
+            });
+          }
+        },
+        confirmText: "Remove",
+        cancelText: "Cancel",
+      });
     },
     [removeConnection],
   );
@@ -968,16 +949,16 @@ function FlowCanvas() {
           layoutOptions: {
             "elk.algorithm": "layered",
             "elk.direction": "RIGHT",
-            "elk.spacing.nodeNode": "150", // Much larger spacing to prevent overlap
-            "elk.layered.spacing.nodeNodeBetweenLayers": "300", // Increased spacing between layers
-            "elk.padding": "[80,80,80,80]", // Increased padding
+            "elk.spacing.nodeNode": "250", // Very large spacing to prevent overlap
+            "elk.layered.spacing.nodeNodeBetweenLayers": "450", // Very large spacing between layers
+            "elk.padding": "[120,120,120,120]", // Large padding
             "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
             "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
             "elk.considerModelOrder.strategy": "PREFER_EDGES",
-            "elk.spacing.edgeNode": "100", // Increased edge to node spacing
-            "elk.spacing.edgeEdge": "50", // Increased edge to edge spacing
-            "elk.layered.spacing.edgeNodeBetweenLayers": "100", // Increased spacing
-            "elk.layered.spacing.baseValue": "120", // Base spacing value
+            "elk.spacing.edgeNode": "150", // Large edge to node spacing
+            "elk.spacing.edgeEdge": "80", // Large edge to edge spacing
+            "elk.layered.spacing.edgeNodeBetweenLayers": "150", // Large spacing
+            "elk.layered.spacing.baseValue": "180", // Larger base spacing value
             "elk.separateConnectedComponents": "true", // Separate disconnected components
           },
           children: connectedInstances.map((instance) => {
@@ -1033,10 +1014,10 @@ function FlowCanvas() {
 
       // Layout orphaned nodes below in a grid with increased spacing
       if (orphanedInstances.length > 0) {
-        const orphanStartY = maxY + 300; // Increased spacing between flows (was 150)
-        const orphanStartX = 100;
-        const spacing = 400; // Increased horizontal spacing (was 350)
-        const rowSpacing = 350; // Increased vertical spacing (was 280)
+        const orphanStartY = maxY + 400; // Large spacing between flows
+        const orphanStartX = 120;
+        const spacing = 500; // Large horizontal spacing to prevent overlap
+        const rowSpacing = 450; // Large vertical spacing to prevent overlap
         const nodesPerRow = 3;
 
         orphanedInstances.forEach((instance, index) => {
@@ -1114,7 +1095,7 @@ function FlowCanvas() {
 
   return (
     <div ref={reactFlowWrapper} className="w-screen h-screen bg-gray-50">
-      <Toaster position="top-right" />
+      <AlertContainer />
       {/* Sidebar Toggle Button - On the edge of sidebar */}
       <button
         onClick={() => setShowSidebar(!showSidebar)}
@@ -1189,7 +1170,6 @@ function FlowCanvas() {
           size={1}
           color="#d1d5db"
         />
-        <Controls />
 
         {/* Selection Mode Toggle and Undo/Redo */}
         <Panel position="bottom-left" className="flex gap-3">
@@ -1214,7 +1194,7 @@ function FlowCanvas() {
           <button
             onClick={() => {
               undo();
-              toast.success("Undo", { duration: 1000 });
+              showAlert({ type: "success", message: "Undo", duration: 1000 });
             }}
             disabled={historyIndex <= 0 || !history || history.length === 0}
             className={`p-3 rounded-none border-4 border-black transition shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${
@@ -1230,7 +1210,7 @@ function FlowCanvas() {
           <button
             onClick={() => {
               redo();
-              toast.success("Redo", { duration: 1000 });
+              showAlert({ type: "success", message: "Redo", duration: 1000 });
             }}
             disabled={
               !history ||
@@ -1265,35 +1245,21 @@ function FlowCanvas() {
         {/* Clear All button */}
         <button
           onClick={() => {
-            toast(
-              (t) => (
-                <div className="flex flex-col gap-3">
-                  <p className="font-bold text-base">Clear workspace?</p>
-                  <p className="text-sm">
-                    This will remove all instances and connections
-                  </p>
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={() => toast.dismiss(t.id)}
-                      className="px-4 py-2 text-sm font-bold bg-gray-200 hover:bg-gray-300 rounded-none border-3 border-black transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        clearAll();
-                        toast.dismiss(t.id);
-                        toast.success("Workspace cleared");
-                      }}
-                      className="px-4 py-2 text-sm font-bold bg-red-400 hover:bg-red-500 rounded-none border-3 border-black transition"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-              ),
-              { duration: 5000 },
-            );
+            showAlert({
+              type: "confirm",
+              message:
+                "Clear workspace? This will remove all instances and connections.",
+              onConfirm: () => {
+                clearAll();
+                showAlert({
+                  type: "success",
+                  message: "Workspace cleared",
+                  duration: 2000,
+                });
+              },
+              confirmText: "Clear",
+              cancelText: "Cancel",
+            });
           }}
           className="bg-[#EF9A9A] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
           title="Clear All"
@@ -1307,10 +1273,10 @@ function FlowCanvas() {
         {/* Cleanup layout button */}
         <button
           onClick={handleCleanupLayout}
-          className="bg-gray-900 hover:bg-black text-white p-3 rounded-lg shadow-lg transition"
+          className="bg-[#B39DDB] hover:bg-[#9575CD] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
           title="Clean up layout"
         >
-          <Sparkles size={16} />
+          <Sparkles size={22} strokeWidth={2.5} />
         </button>
       </div>
 
@@ -1343,13 +1309,13 @@ function FlowCanvas() {
 
           {/* Popup menu */}
           <div
-            className="fixed z-30 bg-white rounded-lg shadow-xl border border-gray-300 p-3 min-w-[250px]"
+            className="fixed z-30 bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black p-3 min-w-[280px]"
             style={{
               left: connectionPopup.position.x,
               top: connectionPopup.position.y,
             }}
           >
-            <div className="text-xs font-mono text-gray-500 px-2 py-1 border-b border-gray-200 mb-2">
+            <div className="text-sm font-mono font-bold text-black px-2 py-1 border-b-2 border-black mb-2">
               {connectionPopup.pointerType}*
             </div>
 
@@ -1358,16 +1324,31 @@ function FlowCanvas() {
               type="text"
               value={popupSearch}
               onChange={(e) => setPopupSearch(e.target.value)}
+              className="w-full px-3 py-2 text-sm font-mono font-bold border-3 border-black rounded-none focus:outline-none focus:ring-0 bg-[#FFFFBA] shadow-[2px_2px_0px_0px_rgba(0,0,0,0.3)] mb-2"
+              placeholder="Search structs..."
+              autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   // Get the filtered and sorted structs (only compatible types)
                   const filteredStructs = structDefinitions
                     .slice()
                     .filter((struct) => {
+                      // Resolve pointer type and struct name to handle typedef
+                      const resolvedPointerType = resolveTypeName(
+                        connectionPopup.pointerType,
+                        structDefinitions,
+                      );
+                      const resolvedStructName = resolveTypeName(
+                        struct.name,
+                        structDefinitions,
+                      );
+
                       // ONLY show compatible types
                       const isCompatible =
                         connectionPopup.pointerType === "void" ||
-                        struct.name === connectionPopup.pointerType;
+                        resolvedPointerType === resolvedStructName ||
+                        struct.name === connectionPopup.pointerType ||
+                        struct.typedef === connectionPopup.pointerType;
 
                       if (!isCompatible) return false;
 
@@ -1377,12 +1358,30 @@ function FlowCanvas() {
                         .includes(popupSearch.toLowerCase());
                     })
                     .sort((a, b) => {
+                      // Resolve for sorting
+                      const resolvedPointerType = resolveTypeName(
+                        connectionPopup.pointerType,
+                        structDefinitions,
+                      );
+                      const resolvedA = resolveTypeName(
+                        a.name,
+                        structDefinitions,
+                      );
+                      const resolvedB = resolveTypeName(
+                        b.name,
+                        structDefinitions,
+                      );
+
                       const aMatches =
                         connectionPopup.pointerType === "void" ||
-                        a.name === connectionPopup.pointerType;
+                        resolvedPointerType === resolvedA ||
+                        a.name === connectionPopup.pointerType ||
+                        a.typedef === connectionPopup.pointerType;
                       const bMatches =
                         connectionPopup.pointerType === "void" ||
-                        b.name === connectionPopup.pointerType;
+                        resolvedPointerType === resolvedB ||
+                        b.name === connectionPopup.pointerType ||
+                        b.typedef === connectionPopup.pointerType;
                       if (aMatches && !bMatches) return -1;
                       if (!aMatches && bMatches) return 1;
                       return 0;
@@ -1418,19 +1417,28 @@ function FlowCanvas() {
                   }
                 }
               }}
-              placeholder="Search..."
-              autoFocus
-              className="w-full px-3 py-1.5 text-xs font-mono border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400 mb-2"
             />
 
             <div className="space-y-1 max-h-[300px] overflow-y-auto">
               {structDefinitions
                 .slice() // Create a copy to avoid mutating original
                 .filter((struct) => {
+                  // Resolve pointer type and struct name to handle typedef
+                  const resolvedPointerType = resolveTypeName(
+                    connectionPopup.pointerType,
+                    structDefinitions,
+                  );
+                  const resolvedStructName = resolveTypeName(
+                    struct.name,
+                    structDefinitions,
+                  );
+
                   // ONLY show compatible types: void* can point to anything, otherwise must match exactly
                   const isCompatible =
                     connectionPopup.pointerType === "void" ||
-                    struct.name === connectionPopup.pointerType;
+                    resolvedPointerType === resolvedStructName ||
+                    struct.name === connectionPopup.pointerType ||
+                    struct.typedef === connectionPopup.pointerType;
 
                   if (!isCompatible) return false;
 
@@ -1441,22 +1449,46 @@ function FlowCanvas() {
                     .includes(popupSearch.toLowerCase());
                 })
                 .sort((a, b) => {
+                  // Resolve for sorting
+                  const resolvedPointerType = resolveTypeName(
+                    connectionPopup.pointerType,
+                    structDefinitions,
+                  );
+                  const resolvedA = resolveTypeName(a.name, structDefinitions);
+                  const resolvedB = resolveTypeName(b.name, structDefinitions);
+
                   // Sort: exact type matches first, then maintain sidebar order
                   const aMatches =
                     connectionPopup.pointerType === "void" ||
-                    a.name === connectionPopup.pointerType;
+                    resolvedPointerType === resolvedA ||
+                    a.name === connectionPopup.pointerType ||
+                    a.typedef === connectionPopup.pointerType;
                   const bMatches =
                     connectionPopup.pointerType === "void" ||
-                    b.name === connectionPopup.pointerType;
+                    resolvedPointerType === resolvedB ||
+                    b.name === connectionPopup.pointerType ||
+                    b.typedef === connectionPopup.pointerType;
 
                   if (aMatches && !bMatches) return -1; // a comes first
                   if (!aMatches && bMatches) return 1; // b comes first
                   return 0; // Keep original sidebar order for same category
                 })
                 .map((struct) => {
+                  // Resolve for match highlighting
+                  const resolvedPointerType = resolveTypeName(
+                    connectionPopup.pointerType,
+                    structDefinitions,
+                  );
+                  const resolvedStructName = resolveTypeName(
+                    struct.name,
+                    structDefinitions,
+                  );
+
                   const isExactMatch =
                     connectionPopup.pointerType === "void" ||
-                    struct.name === connectionPopup.pointerType;
+                    resolvedPointerType === resolvedStructName ||
+                    struct.name === connectionPopup.pointerType ||
+                    struct.typedef === connectionPopup.pointerType;
 
                   return (
                     <button
@@ -1492,36 +1524,29 @@ function FlowCanvas() {
                           setConnectionPopup(null);
                         }, 50);
                       }}
-                      className={`w-full text-left px-2.5 py-1.5 text-xs font-mono hover:bg-gray-100 rounded-md transition flex items-center gap-2 ${
-                        isExactMatch ? "bg-gray-50 border border-gray-300" : ""
+                      className={`w-full text-left px-3 py-2 text-sm font-mono font-bold hover:bg-[#90CAF9] rounded-none transition flex items-center gap-2 border-2 ${
+                        isExactMatch
+                          ? "bg-[#E0BBE4] border-black"
+                          : "border-transparent hover:border-black"
                       }`}
                     >
                       <Plus
-                        size={12}
-                        className={
-                          isExactMatch ? "text-gray-700" : "text-gray-500"
-                        }
+                        size={16}
+                        strokeWidth={2.5}
+                        className="text-black"
                       />
-                      <span
-                        className={
-                          isExactMatch
-                            ? "font-medium text-gray-800"
-                            : "text-gray-600"
-                        }
-                      >
-                        {struct.name}
-                      </span>
+                      <span className="text-black">{struct.name}</span>
                     </button>
                   );
                 })}
 
               {/* Option to cancel */}
-              <div className="border-t border-gray-200 mt-1.5 pt-1.5">
+              <div className="border-t-2 border-black mt-2 pt-2">
                 <button
                   onClick={() => setConnectionPopup(null)}
-                  className="w-full text-center px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700 rounded-md transition font-mono"
+                  className="w-full text-center px-3 py-1.5 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-none transition border-2 border-black"
                 >
-                  esc
+                  ESC
                 </button>
               </div>
             </div>
@@ -1544,7 +1569,7 @@ function FlowCanvas() {
 
           {/* Menu */}
           <div
-            className="fixed z-30 bg-white rounded-lg shadow-xl border border-gray-300 py-1 min-w-[160px]"
+            className="fixed z-30 bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black py-2 min-w-[180px]"
             style={{
               left: contextMenu.x,
               top: contextMenu.y,
@@ -1565,7 +1590,9 @@ function FlowCanvas() {
                         );
                         setHighlightedPath(nodeIds);
                         if (hasCircular) {
-                          toast.error("Circular reference detected!", {
+                          showAlert({
+                            type: "error",
+                            message: "Circular reference detected!",
                             duration: 3000,
                           });
                         }
@@ -1573,7 +1600,7 @@ function FlowCanvas() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition"
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#FFF59D] transition"
                 >
                   Highlight Path
                 </button>
@@ -1581,9 +1608,13 @@ function FlowCanvas() {
                   onClick={() => {
                     setCopiedNodes([contextMenu.nodeId!]);
                     setContextMenu(null);
-                    toast.success("Node copied", { duration: 2000 });
+                    showAlert({
+                      type: "success",
+                      message: "Node copied",
+                      duration: 2000,
+                    });
                   }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition"
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#FFF59D] transition"
                 >
                   Copy Node
                 </button>
@@ -1606,51 +1637,41 @@ function FlowCanvas() {
                           },
                           undefined,
                         );
-                        toast.success("Node duplicated", { duration: 2000 });
+                        showAlert({
+                          type: "success",
+                          message: "Node duplicated",
+                          duration: 2000,
+                        });
                       }
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition"
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#FFF59D] transition"
                 >
                   Duplicate Node
                 </button>
-                <div className="border-t border-gray-200 my-1" />
+                <div className="border-t-2 border-black my-2" />
                 <button
                   onClick={() => {
                     const nodeId = contextMenu.nodeId!;
                     setContextMenu(null);
 
-                    toast(
-                      (t) => (
-                        <div className="flex flex-col gap-2">
-                          <p className="font-medium">
-                            Delete this node and all its connections?
-                          </p>
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => toast.dismiss(t.id)}
-                              className="px-3 py-1 text-sm bg-gray-200 hover:bg-gray-300 rounded transition"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => {
-                                removeInstance(nodeId);
-                                toast.dismiss(t.id);
-                                toast.success("Node deleted");
-                              }}
-                              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ),
-                      { duration: 5000 },
-                    );
+                    showAlert({
+                      type: "confirm",
+                      message: "Delete this node and all its connections?",
+                      onConfirm: () => {
+                        removeInstance(nodeId);
+                        showAlert({
+                          type: "success",
+                          message: "Node deleted",
+                          duration: 2000,
+                        });
+                      },
+                      confirmText: "Delete",
+                      cancelText: "Cancel",
+                    });
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition"
+                  className="w-full text-left px-3 py-2 text-sm font-bold text-red-600 hover:bg-[#EF9A9A] hover:text-black transition"
                 >
                   Delete Node
                 </button>
@@ -1679,7 +1700,7 @@ function FlowCanvas() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#A5D6A7] transition disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={copiedNodes.length === 0}
                 >
                   Paste Node{copiedNodes.length > 1 ? "s" : ""}
@@ -1689,18 +1710,18 @@ function FlowCanvas() {
                     setHighlightedPath(new Set());
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#A5D6A7] transition disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={highlightedPath.size === 0}
                 >
                   Clear Highlights
                 </button>
-                <div className="border-t border-gray-200 my-1" />
+                <div className="border-t-2 border-black my-2" />
                 <button
                   onClick={() => {
                     handleCleanupLayout();
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition"
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#B39DDB] transition"
                 >
                   Auto Layout
                 </button>
@@ -1721,13 +1742,13 @@ function FlowCanvas() {
 
           {/* Menu */}
           <div
-            className="fixed z-30 bg-white rounded-lg shadow-xl border border-gray-300 p-3 min-w-[200px]"
+            className="fixed z-30 bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black p-3 min-w-[220px]"
             style={{
               left: quickAddMenu.x,
               top: quickAddMenu.y,
             }}
           >
-            <div className="text-xs font-medium text-gray-500 mb-2">
+            <div className="text-sm font-bold text-black mb-2 pb-2 border-b-2 border-black">
               Add Node
             </div>
             <div className="space-y-1 max-h-[300px] overflow-y-auto">
@@ -1742,29 +1763,29 @@ function FlowCanvas() {
                     addInstance(struct, position, undefined);
                     setQuickAddMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs font-mono hover:bg-gray-100 rounded-md transition"
+                  className="w-full text-left px-3 py-2 text-sm font-mono font-bold hover:bg-[#90CAF9] rounded-none transition border-2 border-transparent hover:border-black"
                 >
                   {struct.name}
                 </button>
               ))}
 
               {structDefinitions.length === 0 && (
-                <div className="text-center text-gray-400 text-xs py-4">
+                <div className="text-center text-gray-500 text-sm font-bold py-4">
                   No structs defined
                 </div>
               )}
             </div>
 
-            <div className="border-t border-gray-200 mt-2 pt-2">
+            <div className="border-t-2 border-black mt-2 pt-2">
               <button
                 onClick={() => {
                   setQuickAddMenu(null);
                   setEditingStructName(undefined);
                   setShowEditor(true);
                 }}
-                className="w-full bg-gray-800 hover:bg-gray-900 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition"
+                className="w-full bg-[#A5D6A7] hover:bg-[#81C784] text-black px-3 py-2 rounded-none text-sm font-bold flex items-center justify-center gap-2 transition border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
               >
-                <Plus size={12} />
+                <Plus size={16} strokeWidth={2.5} />
                 <span>New Struct</span>
               </button>
             </div>

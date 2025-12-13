@@ -69,7 +69,7 @@ function StructNode({ data }: { data: StructNodeData }) {
   };
 
   return (
-    <div className="bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black min-w-[280px]">
+    <div className="group/card bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black min-w-[280px]">
       {/* Target handle on the left (to receive pointers pointing to this instance) */}
       <Handle
         type="target"
@@ -123,7 +123,7 @@ function StructNode({ data }: { data: StructNodeData }) {
         </div>
         <button
           onClick={handleDelete}
-          className="bg-red-300 border-2 border-black p-1 rounded-none transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+          className="opacity-0 group-hover/card:opacity-100 bg-red-300 border-2 border-black p-1 rounded-none transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
           title="Delete"
         >
           <Trash2 size={14} strokeWidth={2.5} />
