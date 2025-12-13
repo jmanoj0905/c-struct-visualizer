@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+}
+
+/* React Flow custom styles */
+.react-flow__node {
+    font-size: 14px;
+    z-index: 10 !important;
+}
+
+.react-flow__edge {
+    z-index: 100 !important;
+}
+
+.react-flow__edge-path {
+    stroke-width: 2.5;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    shape-rendering: geometricPrecision;
+}
+
+.react-flow__handle {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
