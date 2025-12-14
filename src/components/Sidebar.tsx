@@ -15,7 +15,8 @@ import {
 import { useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import type { CStruct } from "../types";
-import { getStructColor } from "../utils/colors";
+import { getStructColor, UI_COLORS } from "../utils/colors";
+import { Button } from "./ui/button";
 
 interface SidebarProps {
   onEditStruct: (structName: string) => void;
@@ -303,25 +304,32 @@ const Sidebar = ({
   return (
     <div className="fixed left-0 top-0 h-screen w-64 bg-white border-r-4 border-black z-20 flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b-4 border-black bg-[#FFCC80]">
-        <h2 className="text-sm font-bold tracking-tight">STRUCTS</h2>
+      <div
+        className="p-4 border-b-4 border-black"
+        style={{ backgroundColor: UI_COLORS.orange }}
+      >
+        <h2 className="text-xl font-heading tracking-wider uppercase">
+          Structs
+        </h2>
       </div>
 
       {/* Struct List */}
       <div className="flex-1 overflow-y-auto p-3">
         {/* Templates Section */}
         <div className="mb-4">
-          <button
+          <Button
+            variant="neutral"
+            size="sm"
             onClick={() => setShowTemplates(!showTemplates)}
-            className="w-full flex items-center justify-between px-2 py-2 text-xs font-bold hover:bg-gray-100 transition border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+            className="w-full flex items-center justify-between font-heading text-sm tracking-wide"
           >
-            <span>TEMPLATES</span>
+            <span className="uppercase">Templates</span>
             {showTemplates ? (
               <ChevronUp size={16} strokeWidth={3} />
             ) : (
               <ChevronDown size={16} strokeWidth={3} />
             )}
-          </button>
+          </Button>
 
           {showTemplates && (
             <div className="grid grid-cols-3 gap-2 mt-2">
@@ -333,11 +341,12 @@ const Sidebar = ({
                     onClick={() =>
                       handleLoadTemplate(key as keyof typeof templates)
                     }
-                    className="bg-[#BAE1FF] border-3 border-black rounded-none p-2 flex flex-col items-center gap-1 transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                    className="border-2 border-black rounded-base p-2 flex flex-col items-center gap-1 transition shadow-shadow hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
+                    style={{ backgroundColor: UI_COLORS.cyan }}
                     title={`Load ${template.name}`}
                   >
                     <Icon size={18} strokeWidth={2.5} />
-                    <span className="text-[10px] font-bold text-center leading-tight">
+                    <span className="text-[10px] font-heading text-center leading-tight">
                       {template.name}
                     </span>
                   </button>
@@ -349,14 +358,15 @@ const Sidebar = ({
 
         <div className="space-y-2">
           {structDefinitions.map((struct) => {
-            const structColor = getStructColor(struct.name);
+            const allStructNames = structDefinitions.map((s) => s.name);
+            const structColor = getStructColor(struct.name, allStructNames);
             return (
               <div
                 key={struct.name}
                 draggable
                 onDragStart={(e) => handleDragStart(e, struct.name)}
                 onDoubleClick={() => onAddInstance(struct.name)}
-                className="group border-3 border-black rounded-none p-2.5 cursor-move transition-all shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 relative"
+                className="group border-2 border-black rounded-base p-2.5 cursor-move transition-all shadow-shadow hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 relative"
                 style={{ backgroundColor: structColor }}
               >
                 {/* 6-dot drag indicator */}
@@ -366,10 +376,10 @@ const Sidebar = ({
 
                 {/* Struct info */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono font-bold text-xs truncate">
+                  <div className="font-mono font-heading text-xs truncate">
                     {struct.name}
                   </div>
-                  <div className="text-xs font-semibold text-gray-700 mt-0.5">
+                  <div className="text-xs font-base text-gray-700 mt-0.5">
                     {struct.fields.length} field
                     {struct.fields.length !== 1 ? "s" : ""}
                   </div>
@@ -377,22 +387,25 @@ const Sidebar = ({
 
                 {/* Action buttons on hover */}
                 <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
+                  <Button
+                    size="icon"
+                    variant="noShadow"
                     onClick={(e) => {
                       e.stopPropagation();
                       onEditStruct(struct.name);
                     }}
-                    className="p-1.5 bg-blue-300 border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                    className="size-7 p-0"
                     title="Edit"
                   >
                     <Edit2 size={12} strokeWidth={2.5} />
-                  </button>
+                  </Button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteStruct(struct.name);
                     }}
-                    className="p-1.5 bg-red-300 border-2 border-black rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                    className="size-7 p-0 border-2 border-black rounded-base inline-flex items-center justify-center"
+                    style={{ backgroundColor: UI_COLORS.redDelete }}
                     title="Delete"
                   >
                     <X size={12} strokeWidth={2.5} />
@@ -403,18 +416,19 @@ const Sidebar = ({
           })}
 
           {/* Create New Struct Button */}
-          <button
+          <Button
             onClick={onDefineStruct}
-            className="w-full bg-[#A5D6A7] px-3 py-2.5 rounded-none text-xs font-bold flex items-center justify-center gap-2 transition border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 mt-3"
+            className="w-full mt-3"
+            style={{ backgroundColor: UI_COLORS.green }}
             title="Define New Struct"
           >
             <FileCode size={16} strokeWidth={2.5} />
             <span>New Struct</span>
-          </button>
+          </Button>
         </div>
 
         {structDefinitions.length === 0 && (
-          <div className="text-center text-gray-500 text-xs font-bold mt-8 mb-4">
+          <div className="text-center text-gray-500 text-xs font-heading mt-8 mb-4">
             No structs defined
           </div>
         )}
@@ -423,31 +437,34 @@ const Sidebar = ({
       {/* Action Buttons */}
       <div className="p-3 border-t-4 border-black space-y-2">
         <div className="grid grid-cols-2 gap-2">
-          <button
+          <Button
             onClick={handleSaveWorkspace}
-            className="bg-[#90CAF9] px-3 py-2 rounded-none text-xs font-bold flex items-center justify-center gap-2 transition border-3 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+            size="sm"
+            style={{ backgroundColor: UI_COLORS.blue }}
             title="Save Workspace"
           >
             <Save size={16} strokeWidth={2.5} />
             <span>Save</span>
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleLoadWorkspace}
-            className="bg-[#81C784] px-3 py-2 rounded-none text-xs font-bold flex items-center justify-center gap-2 transition border-3 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+            size="sm"
+            style={{ backgroundColor: UI_COLORS.emerald }}
             title="Load Workspace"
           >
             <Upload size={16} strokeWidth={2.5} />
             <span>Load</span>
-          </button>
+          </Button>
         </div>
-        <button
+        <Button
           onClick={onExport}
-          className="w-full bg-[#DDA0DD] px-3 py-2 rounded-none text-xs font-bold flex items-center justify-center gap-2 transition border-3 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+          className="w-full"
+          style={{ backgroundColor: UI_COLORS.purple }}
           title="Export to PNG"
         >
           <Download size={16} strokeWidth={2.5} />
           <span>Export PNG</span>
-        </button>
+        </Button>
       </div>
     </div>
   );

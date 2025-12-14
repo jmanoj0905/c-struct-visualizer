@@ -2,7 +2,10 @@ import { memo, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 import { useCanvasStore } from "../store/canvasStore";
 import { Trash2, Edit2, Check } from "lucide-react";
-import { getStructColor } from "../utils/colors";
+import { getStructColor, UI_COLORS } from "../utils/colors";
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 
 interface StructNodeData {
   instanceId: string;
@@ -26,13 +29,15 @@ function StructNode({ data }: { data: StructNodeData }) {
     updateInstanceName,
     instances,
     connections,
+    structDefinitions,
   } = useCanvasStore();
   const instance = instances.find((i) => i.id === data.instanceId);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(data.instanceName);
 
   // Get a deterministic color for this struct type
-  const structColor = getStructColor(data.structName);
+  const allStructNames = structDefinitions.map((s) => s.name);
+  const structColor = getStructColor(data.structName, allStructNames);
 
   // Helper to check if a pointer is connected
   const isPointerConnected = (fieldName: string) => {
@@ -69,7 +74,7 @@ function StructNode({ data }: { data: StructNodeData }) {
   };
 
   return (
-    <div className="group/card bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black min-w-[280px]">
+    <div className="group/card bg-white rounded-base shadow-shadow border-2 border-black min-w-[280px]">
       {/* Target handle on the left (to receive pointers pointing to this instance) */}
       <Handle
         type="target"
@@ -82,48 +87,56 @@ function StructNode({ data }: { data: StructNodeData }) {
 
       {/* Header */}
       <div
-        className="px-3 py-2 border-b-4 border-black flex justify-between items-center"
+        className="px-3 py-2 border-b-2 border-black flex justify-between items-center"
         style={{ backgroundColor: structColor }}
       >
         <div className="flex-1">
-          <div className="text-xs font-bold font-mono">{data.structName}</div>
+          <div className="text-xs font-heading font-mono">
+            {data.structName}
+          </div>
           {isEditingName ? (
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 type="text"
                 value={tempName}
                 onChange={(e) => setTempName(e.target.value)}
                 onKeyDown={handleNameKeyDown}
                 onBlur={handleNameSave}
                 autoFocus
-                className="bg-white font-mono text-sm font-bold px-2 py-0.5 rounded-none border-2 border-black focus:outline-none focus:ring-0"
+                className="h-7 text-sm font-heading px-2 py-0.5"
               />
-              <button
+              <Button
+                size="icon"
+                variant="noShadow"
                 onClick={handleNameSave}
-                className="bg-green-300 border-2 border-black p-0.5 rounded-none transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                className="size-7"
+                style={{ backgroundColor: UI_COLORS.green }}
                 title="Save"
               >
                 <Check size={14} strokeWidth={2.5} />
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="flex items-center gap-2 group">
-              <div className="font-mono text-sm font-bold">
+              <div className="font-mono text-sm font-heading">
                 {data.instanceName}
               </div>
-              <button
+              <Button
+                size="icon"
+                variant="noShadow"
                 onClick={handleNameEdit}
-                className="opacity-0 group-hover:opacity-100 bg-blue-300 border-2 border-black p-0.5 rounded-none transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                className="size-7 opacity-0 group-hover:opacity-100"
                 title="Edit"
               >
                 <Edit2 size={12} strokeWidth={2.5} />
-              </button>
+              </Button>
             </div>
           )}
         </div>
         <button
           onClick={handleDelete}
-          className="opacity-0 group-hover/card:opacity-100 bg-red-300 border-2 border-black p-1 rounded-none transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+          className="opacity-0 group-hover/card:opacity-100 size-8 border-2 border-black rounded-base inline-flex items-center justify-center transition"
+          style={{ backgroundColor: UI_COLORS.redDelete }}
           title="Delete"
         >
           <Trash2 size={14} strokeWidth={2.5} />
@@ -141,27 +154,33 @@ function StructNode({ data }: { data: StructNodeData }) {
           return (
             <div key={field.name} className="relative">
               {/* Field Row */}
-              <div className="flex items-start gap-2 bg-white border-2 border-black p-2 rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              <div className="flex items-start gap-2 bg-white border-2 border-black p-2 rounded-base shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                 {/* Field name and type */}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-black text-base tracking-tight">
+                    <span className="font-heading text-base tracking-tight">
                       {field.name}
                     </span>
                     {field.pointerLevel &&
                       field.pointerLevel > 1 &&
                       !field.isFunctionPointer && (
-                        <span className="text-[10px] bg-[#E0BBE4] border-2 border-black px-1.5 py-0.5 rounded-none font-black">
+                        <span
+                          className="text-[10px] border-2 border-black px-1.5 py-0.5 rounded-base font-heading"
+                          style={{ backgroundColor: UI_COLORS.purple }}
+                        >
                           {field.pointerLevel}x PTR
                         </span>
                       )}
                     {field.isFunctionPointer && (
-                      <span className="text-[10px] bg-[#90CAF9] border-2 border-black px-1.5 py-0.5 rounded-none font-black">
+                      <span
+                        className="text-[10px] border-2 border-black px-1.5 py-0.5 rounded-base font-heading"
+                        style={{ backgroundColor: UI_COLORS.blue }}
+                      >
                         FN PTR
                       </span>
                     )}
                   </div>
-                  <div className="text-xs font-mono font-bold text-gray-600 mb-1">
+                  <div className="text-xs font-mono font-base text-gray-600 mb-1">
                     {field.isFunctionPointer
                       ? `(*${field.name})()`
                       : field.isPointer && field.isArray
@@ -174,46 +193,46 @@ function StructNode({ data }: { data: StructNodeData }) {
                   </div>
 
                   {/* Value input for non-pointer, non-array fields */}
-                  {!field.isPointer && !field.isArray && (
-                    <input
-                      type={
-                        field.type === "int" ||
-                        field.type === "float" ||
-                        field.type === "double"
-                          ? "number"
-                          : "text"
-                      }
-                      value={fieldValueStr}
-                      onChange={(e) =>
-                        updateFieldValue(
-                          data.instanceId,
-                          field.name,
-                          e.target.value,
-                        )
-                      }
-                      placeholder={`${field.type} value`}
-                      className="w-full px-2 py-1.5 text-sm font-bold border-3 border-black rounded-none focus:outline-none focus:ring-0 bg-[#FFFFBA] shadow-[2px_2px_0px_0px_rgba(0,0,0,0.3)]"
-                    />
-                  )}
+                  {!field.isPointer &&
+                    !field.isArray &&
+                    field.type !== "bool" && (
+                      <Input
+                        type={
+                          field.type === "int" ||
+                          field.type === "float" ||
+                          field.type === "double"
+                            ? "number"
+                            : "text"
+                        }
+                        value={fieldValueStr}
+                        onChange={(e) =>
+                          updateFieldValue(
+                            data.instanceId,
+                            field.name,
+                            e.target.value,
+                          )
+                        }
+                        placeholder={`${field.type} value`}
+                        className="w-full h-9 text-sm font-base"
+                      />
+                    )}
 
                   {/* Checkbox for bool type */}
                   {!field.isPointer &&
                     !field.isArray &&
                     field.type === "bool" && (
                       <label className="flex items-center gap-2 mt-1 cursor-pointer">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={fieldValueStr === "true"}
-                          onChange={(e) =>
+                          onCheckedChange={(checked) =>
                             updateFieldValue(
                               data.instanceId,
                               field.name,
-                              e.target.checked ? "true" : "false",
+                              checked ? "true" : "false",
                             )
                           }
-                          className="w-4 h-4 border-2 border-black rounded-none focus:ring-0"
                         />
-                        <span className="text-xs font-bold">
+                        <span className="text-xs font-base">
                           {fieldValueStr === "true" ? "true" : "false"}
                         </span>
                       </label>
@@ -234,10 +253,10 @@ function StructNode({ data }: { data: StructNodeData }) {
 
                           return (
                             <div key={idx} className="flex items-center gap-2">
-                              <span className="text-xs font-bold w-10 text-right">
+                              <span className="text-xs font-heading w-10 text-right">
                                 [{idx}]
                               </span>
-                              <input
+                              <Input
                                 type={
                                   field.type === "int" ||
                                   field.type === "float" ||
@@ -256,7 +275,7 @@ function StructNode({ data }: { data: StructNodeData }) {
                                   );
                                 }}
                                 placeholder={field.type}
-                                className="flex-1 px-2 py-1 text-sm font-bold border-2 border-black rounded-none focus:outline-none focus:ring-0 bg-[#FFFFBA] shadow-[1px_1px_0px_0px_rgba(0,0,0,0.3)]"
+                                className="flex-1 h-8 text-sm"
                               />
                             </div>
                           );
@@ -282,17 +301,20 @@ function StructNode({ data }: { data: StructNodeData }) {
                               key={idx}
                               className="flex items-center gap-2 relative pr-6"
                             >
-                              <span className="text-xs font-bold w-10 text-right">
+                              <span className="text-xs font-heading w-10 text-right">
                                 [{idx}]
                               </span>
                               <div className="flex-1">
                                 {isConnected ? (
-                                  <div className="flex items-center gap-2 text-sm font-black font-mono bg-[#A5D6A7] border-2 border-black px-2 py-0.5 rounded-none">
+                                  <div
+                                    className="flex items-center gap-2 text-sm font-heading font-mono border-2 border-black px-2 py-0.5 rounded-base"
+                                    style={{ backgroundColor: UI_COLORS.green }}
+                                  >
                                     <span className="inline-block w-2.5 h-2.5 bg-black rounded-none"></span>
                                     CONNECTED
                                   </div>
                                 ) : (
-                                  <div className="flex items-center gap-2 text-xs text-gray-500 font-bold font-mono">
+                                  <div className="flex items-center gap-2 text-xs text-gray-500 font-base font-mono">
                                     <span className="inline-block w-2 h-2 bg-gray-400 rounded-none"></span>
                                     NULL
                                   </div>
@@ -324,12 +346,15 @@ function StructNode({ data }: { data: StructNodeData }) {
                   {field.isPointer && !field.isArray && (
                     <div>
                       {isPointerConnected(field.name) ? (
-                        <div className="flex items-center gap-2 text-sm font-black font-mono bg-[#A5D6A7] border-2 border-black px-2 py-1 rounded-none shadow-[2px_2px_0px_0px_rgba(0,0,0,0.3)]">
+                        <div
+                          className="flex items-center gap-2 text-sm font-heading font-mono border-2 border-black px-2 py-1 rounded-base shadow-[2px_2px_0px_0px_rgba(0,0,0,0.3)]"
+                          style={{ backgroundColor: UI_COLORS.green }}
+                        >
                           <span className="inline-block w-2.5 h-2.5 bg-black rounded-none"></span>
                           CONNECTED
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2 text-xs text-gray-500 font-bold font-mono">
+                        <div className="flex items-center gap-2 text-xs text-gray-500 font-base font-mono">
                           <span className="inline-block w-2 h-2 bg-gray-400 rounded-none"></span>
                           NULL
                         </div>

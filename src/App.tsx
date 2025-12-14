@@ -23,8 +23,8 @@ import {
   Settings as SettingsIcon,
   ChevronLeft,
   ChevronRight,
-  MousePointer2,
-  Move,
+  Hand,
+  MousePointer,
   Undo,
   Redo,
   Maximize2,
@@ -38,8 +38,11 @@ import StructEditor from "./components/StructEditor";
 import CustomEdge from "./components/CustomEdge";
 import Sidebar from "./components/Sidebar";
 import Settings from "./components/Settings";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import { useCanvasStore } from "./store/canvasStore";
 import { canConnectPointer, resolveTypeName } from "./parser/structParser";
+import { UI_COLORS } from "./utils/colors";
 import { analyzeGraph, CircularPattern } from "./utils/graphAnalysis";
 import {
   layoutSelfLoop,
@@ -378,6 +381,73 @@ function FlowCanvas() {
         }
       }
 
+      // Duplicate nodes (Ctrl+D or Cmd+D)
+      if ((event.ctrlKey || event.metaKey) && event.key === "d") {
+        const selectedNodes = nodes.filter((node) => node.selected);
+        if (selectedNodes.length > 0) {
+          event.preventDefault();
+          const selectedNodeIds = selectedNodes.map((node) => node.id);
+
+          // Copy and immediately paste
+          setCopiedNodes(selectedNodeIds);
+          const internalConnections = connections.filter(
+            (conn) =>
+              selectedNodeIds.includes(conn.sourceInstanceId) &&
+              selectedNodeIds.includes(conn.targetInstanceId),
+          );
+          setCopiedConnections(
+            internalConnections.map((conn) => ({
+              sourceId: conn.sourceInstanceId,
+              targetId: conn.targetInstanceId,
+              fieldName: conn.sourceFieldName,
+            })),
+          );
+
+          // Paste immediately
+          const instanceIdMap = new Map<string, string>();
+          selectedNodeIds.forEach((nodeId) => {
+            const instance = instances.find((i) => i.id === nodeId);
+            if (instance) {
+              const struct = structDefinitions.find(
+                (s) => s.name === instance.structName,
+              );
+              if (struct) {
+                const newPosition = {
+                  x: instance.position.x + 50,
+                  y: instance.position.y + 50,
+                };
+                const newInstance = addInstance(struct, newPosition, undefined);
+                if (newInstance) {
+                  instanceIdMap.set(nodeId, newInstance.id);
+                }
+              }
+            }
+          });
+
+          // Recreate connections
+          setTimeout(() => {
+            internalConnections.forEach((conn) => {
+              const newSourceId = instanceIdMap.get(conn.sourceInstanceId);
+              const newTargetId = instanceIdMap.get(conn.targetInstanceId);
+              if (newSourceId && newTargetId) {
+                addConnection({
+                  sourceInstanceId: newSourceId,
+                  sourceFieldName: conn.sourceFieldName,
+                  targetInstanceId: newTargetId,
+                });
+              }
+            });
+          }, 50);
+
+          showAlert({
+            type: "success",
+            message: `Duplicated ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
+            duration: 2000,
+          });
+        }
+        return;
+      }
+
       // Copy nodes (Ctrl+C or Cmd+C)
       if ((event.ctrlKey || event.metaKey) && event.key === "c") {
         const selectedNodes = nodes.filter((node) => node.selected);
@@ -576,20 +646,8 @@ function FlowCanvas() {
         setHighlightedPath(new Set());
       } else {
         // Calculate and highlight the path from this node
-        const { nodeIds, hasCircular } = calculatePointerPath(node.id);
+        const { nodeIds } = calculatePointerPath(node.id);
         setHighlightedPath(nodeIds);
-
-        // Show alert if circular reference detected
-        if (hasCircular) {
-          setTimeout(() => {
-            showAlert({
-              type: "error",
-              message:
-                "Circular reference detected! This pointer path contains a circular reference where a node points back to itself or a previous node in the chain.",
-              duration: 4000,
-            });
-          }, 100);
-        }
       }
     },
     [highlightedPath, calculatePointerPath],
@@ -725,8 +783,8 @@ function FlowCanvas() {
 
       if (existingConnection) {
         showAlert({
-          type: "error",
-          message: `This pointer is already connected! A pointer can only have one connection. Remove the existing connection first (right-click on the arrow).`,
+          type: "warning",
+          message: `This pointer is already connected! Right-click the connection arrow to delete it first.`,
           duration: 4000,
         });
         return;
@@ -797,6 +855,11 @@ function FlowCanvas() {
         removeConnection(edge.data.connectionId as string);
         // Also remove from React Flow's edge state
         setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+        showAlert({
+          type: "success",
+          message: "Connection deleted",
+          duration: 2000,
+        });
       }
     },
     [removeConnection, setEdges],
@@ -1150,19 +1213,21 @@ function FlowCanvas() {
     <div ref={reactFlowWrapper} className="w-screen h-screen bg-gray-50">
       <AlertContainer />
       {/* Sidebar Toggle Button - On the edge of sidebar */}
-      <button
+      <Button
+        size="icon"
         onClick={() => setShowSidebar(!showSidebar)}
-        className={`fixed top-1/2 -translate-y-1/2 z-30 bg-[#80DEEA] py-4 px-2 border-4 border-black transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none ${
-          showSidebar ? "left-64 rounded-r-none" : "left-0 rounded-r-none"
+        className={`fixed top-1/2 -translate-y-1/2 z-30 transition-all py-3 px-1.5 h-16 w-8 rounded-l-none ${
+          showSidebar ? "left-64" : "left-0"
         }`}
+        style={{ backgroundColor: UI_COLORS.cyan }}
         title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
       >
         {showSidebar ? (
-          <ChevronLeft size={20} strokeWidth={3} />
+          <ChevronLeft size={16} strokeWidth={2.5} />
         ) : (
-          <ChevronRight size={20} strokeWidth={3} />
+          <ChevronRight size={16} strokeWidth={2.5} />
         )}
-      </button>
+      </Button>
 
       {/* Sidebar */}
       {showSidebar && (
@@ -1226,11 +1291,14 @@ function FlowCanvas() {
 
         {/* Selection Mode Toggle and Undo/Redo */}
         <Panel position="bottom-left" className="flex gap-3">
-          <button
+          <Button
+            size="icon"
             onClick={() => setIsSelecting(!isSelecting)}
-            className={`p-3 rounded-none border-4 border-black transition shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 ${
-              isSelecting ? "bg-[#B39DDB]" : "bg-[#FFF59D]"
-            }`}
+            style={{
+              backgroundColor: isSelecting
+                ? UI_COLORS.indigo
+                : UI_COLORS.yellow,
+            }}
             title={
               isSelecting
                 ? "Switch to Pan Mode (Shift)"
@@ -1238,29 +1306,27 @@ function FlowCanvas() {
             }
           >
             {isSelecting ? (
-              <MousePointer2 size={22} strokeWidth={2.5} />
+              <MousePointer size={22} strokeWidth={2.5} />
             ) : (
-              <Move size={22} strokeWidth={2.5} />
+              <Hand size={22} strokeWidth={2.5} />
             )}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            size="icon"
             onClick={() => {
               undo();
               showAlert({ type: "success", message: "Undo", duration: 1000 });
             }}
             disabled={historyIndex <= 0 || !history || history.length === 0}
-            className={`p-3 rounded-none border-4 border-black transition shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${
-              historyIndex <= 0 || !history || history.length === 0
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed shadow-none"
-                : "bg-[#A5D6A7] active:shadow-none active:translate-x-1 active:translate-y-1"
-            }`}
+            style={{ backgroundColor: UI_COLORS.green }}
             title="Undo (Ctrl/Cmd+Z)"
           >
             <Undo size={22} strokeWidth={2.5} />
-          </button>
+          </Button>
 
-          <button
+          <Button
+            size="icon"
             onClick={() => {
               redo();
               showAlert({ type: "success", message: "Redo", duration: 1000 });
@@ -1270,33 +1336,29 @@ function FlowCanvas() {
               history.length === 0 ||
               historyIndex >= history.length - 1
             }
-            className={`p-3 rounded-none border-4 border-black transition shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${
-              !history ||
-              history.length === 0 ||
-              historyIndex >= history.length - 1
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed shadow-none"
-                : "bg-[#FFCC80] active:shadow-none active:translate-x-1 active:translate-y-1"
-            }`}
+            style={{ backgroundColor: UI_COLORS.orange }}
             title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+U)"
           >
             <Redo size={22} strokeWidth={2.5} />
-          </button>
+          </Button>
         </Panel>
       </ReactFlow>
 
       {/* Top-right buttons */}
       <div className="fixed top-4 right-4 flex gap-3 z-10">
         {/* Settings button */}
-        <button
+        <Button
+          size="icon"
           onClick={() => setShowSettings(true)}
-          className="bg-[#DDA0DD] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
+          style={{ backgroundColor: UI_COLORS.purple }}
           title="Settings"
         >
           <SettingsIcon size={22} strokeWidth={2.5} />
-        </button>
+        </Button>
 
         {/* Clear All button */}
-        <button
+        <Button
+          size="icon"
           onClick={() => {
             showAlert({
               type: "confirm",
@@ -1314,32 +1376,34 @@ function FlowCanvas() {
               cancelText: "Cancel",
             });
           }}
-          className="bg-[#EF9A9A] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
+          style={{ backgroundColor: UI_COLORS.red }}
           title="Clear All"
         >
           <Trash2 size={22} strokeWidth={2.5} />
-        </button>
+        </Button>
       </div>
 
       {/* Bottom-right buttons */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-10">
         {/* Fit to window button */}
-        <button
+        <Button
+          size="icon"
           onClick={() => fitView({ padding: 0.2, duration: 300 })}
-          className="bg-[#80DEEA] hover:bg-[#4DD0E1] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
+          style={{ backgroundColor: UI_COLORS.cyan }}
           title="Fit to window"
         >
           <Maximize2 size={22} strokeWidth={2.5} />
-        </button>
+        </Button>
 
         {/* Cleanup layout button */}
-        <button
+        <Button
+          size="icon"
           onClick={handleCleanupLayout}
-          className="bg-[#B39DDB] hover:bg-[#9575CD] p-3 rounded-none border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition active:shadow-none active:translate-x-1 active:translate-y-1"
+          style={{ backgroundColor: UI_COLORS.indigo }}
           title="Clean up layout"
         >
           <Sparkles size={22} strokeWidth={2.5} />
-        </button>
+        </Button>
       </div>
 
       {showEditor && (
@@ -1382,11 +1446,11 @@ function FlowCanvas() {
             </div>
 
             {/* Search input */}
-            <input
+            <Input
               type="text"
               value={popupSearch}
               onChange={(e) => setPopupSearch(e.target.value)}
-              className="w-full px-3 py-2 text-sm font-mono font-bold border-3 border-black rounded-none focus:outline-none focus:ring-0 bg-[#FFFFBA] shadow-[2px_2px_0px_0px_rgba(0,0,0,0.3)] mb-2"
+              className="w-full mb-2 font-mono font-heading"
               placeholder="Search structs..."
               autoFocus
               onKeyDown={(e) => {
@@ -1839,17 +1903,18 @@ function FlowCanvas() {
             </div>
 
             <div className="border-t-2 border-black mt-2 pt-2">
-              <button
+              <Button
                 onClick={() => {
                   setQuickAddMenu(null);
                   setEditingStructName(undefined);
                   setShowEditor(true);
                 }}
-                className="w-full bg-[#A5D6A7] hover:bg-[#81C784] text-black px-3 py-2 rounded-none text-sm font-bold flex items-center justify-center gap-2 transition border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5"
+                className="w-full"
+                style={{ backgroundColor: UI_COLORS.green }}
               >
                 <Plus size={16} strokeWidth={2.5} />
                 <span>New Struct</span>
-              </button>
+              </Button>
             </div>
           </div>
         </>
