@@ -36,13 +36,43 @@ function AlertContainer() {
   };
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-3 pointer-events-none">
-      {alerts.map((alert) => (
-        <div key={alert.id} className="pointer-events-auto">
-          <ThemedAlert alert={alert} onClose={removeAlert} />
-        </div>
-      ))}
-    </div>
+    <>
+      {/* Regular alerts (top-right) */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 pointer-events-none">
+        {alerts
+          .filter((a) => a.type !== "confirm")
+          .map((alert, index) => (
+            <div key={alert.id} className="pointer-events-auto">
+              <ThemedAlert
+                alert={alert}
+                onClose={removeAlert}
+                isLatest={
+                  index ===
+                  alerts.filter((a) => a.type !== "confirm").length - 1
+                }
+              />
+            </div>
+          ))}
+      </div>
+
+      {/* Confirmation dialogs (centered) */}
+      {alerts
+        .filter((a) => a.type === "confirm")
+        .map((alert, index, arr) => (
+          <div
+            key={alert.id}
+            className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none"
+          >
+            <div className="pointer-events-auto">
+              <ThemedAlert
+                alert={alert}
+                onClose={removeAlert}
+                isLatest={index === arr.length - 1}
+              />
+            </div>
+          </div>
+        ))}
+    </>
   );
 }
 

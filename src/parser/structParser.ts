@@ -310,40 +310,48 @@ export function validateStructCode(
         });
       } else {
         // Check if field type is valid
-        // IMPORTANT: Inside struct definition, you CANNOT use ANY typedef name!
-        // But you CAN use 'struct Name*' for any existing struct
+        // C Rule: You CANNOT use the struct's OWN typedef name inside its definition
+        // But you CAN use OTHER struct typedef names that are already defined
         if (typedef && field.type === typedef) {
           errors.push({
             line: currentLine,
-            message: `Cannot use typedef name '${typedef}' inside the struct. Use 'struct ${structName}*' instead.`,
+            message: `Cannot use typedef name '${typedef}' inside its own struct definition. Use 'struct ${structName}*' instead for self-reference.`,
             type: "error",
           });
         }
 
-        // Check if using a typedef name of another struct (also not allowed)
-        const otherTypedef = existingStructs.find(
-          (s) => s.typedef === field.type,
-        );
-        if (otherTypedef && field.type !== structName) {
-          errors.push({
-            line: currentLine,
-            message: `Cannot use typedef name '${field.type}' in struct fields. Use 'struct ${otherTypedef.name}*' instead.`,
-            type: "error",
-          });
-        }
+        // Check if the type is valid
+        // C Rule: Pointers to incomplete types (forward declarations) are allowed!
+        // For pointers: can point to ANY type name (even undefined structs)
+        // For non-pointers: must be a known primitive or defined type
+        const isKnownType = isValidType(field.type, existingStructs);
+        const isSelfReference = field.type === structName;
 
-        // For pointers, the type can be any existing struct name (used with 'struct' keyword)
-        // For non-pointers, check if the type is valid
-        if (
-          !field.isPointer &&
-          !isValidType(field.type, existingStructs) &&
-          field.type !== structName
-        ) {
-          errors.push({
-            line: currentLine,
-            message: `Unknown type '${field.type}'.`,
-            type: "error",
-          });
+        if (field.isPointer) {
+          // Pointers can point to incomplete types (forward declarations)
+          // This is valid C: struct UndefinedStruct* ptr;
+          // No error needed - pointers to undefined structs are allowed
+
+          // Warning: For self-referential pointers, recommend using 'struct Name*' syntax
+          // But only if they're NOT already using it (check if fieldLine contains "struct")
+          if (isSelfReference && !fieldLine.includes("struct")) {
+            errors.push({
+              line: currentLine,
+              message: `Hint: Use 'struct ${structName}*' syntax for self-referential pointers (current: '${field.type}*').`,
+              type: "warning",
+            });
+          }
+        } else {
+          // Non-pointer fields must be known types
+          // You cannot have: struct UndefinedStruct field; (incomplete type)
+          // You can only have: struct UndefinedStruct* ptr; (pointer to incomplete type)
+          if (!isKnownType && !isSelfReference) {
+            errors.push({
+              line: currentLine,
+              message: `Unknown type '${field.type}'. Non-pointer fields must use defined types. Use a pointer ('${field.type}*') if this is a forward declaration.`,
+              type: "error",
+            });
+          }
         }
       }
 

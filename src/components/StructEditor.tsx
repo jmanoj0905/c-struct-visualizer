@@ -7,15 +7,20 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
+import CodeMirror from "@uiw/react-codemirror";
+import { cpp } from "@codemirror/lang-cpp";
 import { useCanvasStore } from "../store/canvasStore";
 import {
   parseStruct,
   validateStructCode,
   type ValidationError,
+  canConnectPointer,
+  resolveTypeName,
 } from "../parser/structParser";
 import { Button } from "./ui/button";
 import { Alert, AlertDescription } from "./ui/alert";
 import { UI_COLORS } from "../utils/colors";
+import { showAlert } from "./AlertContainer";
 
 interface Props {
   onClose: () => void;
@@ -29,6 +34,7 @@ export default function StructEditor({ onClose, editStructName }: Props) {
     deleteStructDefinition,
     structDefinitions,
     instances,
+    connections,
   } = useCanvasStore();
 
   // Load existing struct if editing
@@ -65,7 +71,7 @@ ${existingStruct.fields
     : `typedef struct Node {
   int data;
   struct Node* next;
-} Node;`;
+} Node_t;`;
 
   const [code, setCode] = useState(defaultCode);
   const [error, setError] = useState<string | null>(null);
@@ -100,10 +106,16 @@ ${existingStruct.fields
       confirmMessage = `Are you sure you want to delete struct "${editStructName}"?`;
     }
 
-    if (window.confirm(confirmMessage)) {
-      deleteStructDefinition(editStructName);
-      onClose();
-    }
+    showAlert({
+      type: "confirm",
+      message: confirmMessage,
+      onConfirm: () => {
+        deleteStructDefinition(editStructName);
+        onClose();
+      },
+      confirmText: "Delete",
+      cancelText: "Cancel",
+    });
   };
 
   const handleParse = () => {
@@ -132,6 +144,72 @@ ${existingStruct.fields
         setError(`Struct "${parsed.name}" already exists!`);
         return;
       }
+
+      // Check if this update will invalidate any connections
+      const updatedStructDefinitions = structDefinitions.map((s) =>
+        s.name === editStructName ? parsed : s,
+      );
+
+      const affectedConnections = connections.filter((conn) => {
+        const sourceInstance = instances.find(
+          (i) => i.id === conn.sourceInstanceId,
+        );
+        const targetInstance = instances.find(
+          (i) => i.id === conn.targetInstanceId,
+        );
+
+        if (!sourceInstance || !targetInstance) return false;
+
+        // Only check connections from instances of this struct
+        if (sourceInstance.structName !== editStructName) return false;
+
+        const sourceStruct = updatedStructDefinitions.find(
+          (s) => s.name === sourceInstance.structName,
+        );
+
+        if (!sourceStruct) return false;
+
+        const baseFieldName = conn.sourceFieldName.split("[")[0];
+        const sourceField = sourceStruct.fields.find(
+          (f) => f.name === baseFieldName,
+        );
+
+        // Connection will be removed if:
+        // 1. Field doesn't exist anymore
+        // 2. Field is no longer a pointer
+        // 3. Pointer type no longer matches target
+        if (!sourceField || !sourceField.isPointer) return true;
+
+        const resolvedPointerType = resolveTypeName(
+          sourceField.type,
+          updatedStructDefinitions,
+        );
+        const resolvedTargetType = resolveTypeName(
+          targetInstance.structName,
+          updatedStructDefinitions,
+        );
+
+        return !canConnectPointer(resolvedPointerType, resolvedTargetType);
+      });
+
+      // If connections will be removed, show confirmation
+      if (affectedConnections.length > 0) {
+        showAlert({
+          type: "confirm",
+          message: `Updating this struct will remove ${affectedConnections.length} connection${affectedConnections.length === 1 ? "" : "s"} that are no longer valid.\n\nDo you want to continue?`,
+          onConfirm: () => {
+            updateStructDefinition(editStructName, parsed);
+            setSuccess(true);
+            setTimeout(() => {
+              onClose();
+            }, 1500);
+          },
+          confirmText: "Update",
+          cancelText: "Cancel",
+        });
+        return;
+      }
+
       updateStructDefinition(editStructName, parsed);
       setSuccess(true);
     } else {
@@ -150,8 +228,8 @@ ${existingStruct.fields
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-base shadow-shadow w-full max-w-2xl mx-4 border-2 border-black">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 modal-backdrop">
+      <div className="bg-white rounded-base shadow-shadow w-full max-w-2xl mx-4 border-2 border-black animate-scaleIn">
         {/* Header */}
         <div
           className="px-6 py-3 border-b-2 border-black flex items-center justify-between"
@@ -174,29 +252,38 @@ ${existingStruct.fields
 
         {/* Editor */}
         <div className="p-6">
-          <textarea
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => {
-              // Handle Tab key to insert tab instead of moving focus
-              if (e.key === "Tab") {
-                e.preventDefault();
-                const start = e.currentTarget.selectionStart;
-                const end = e.currentTarget.selectionEnd;
-                const newCode =
-                  code.substring(0, start) + "  " + code.substring(end);
-                setCode(newCode);
-                // Set cursor position after the inserted tab
-                setTimeout(() => {
-                  e.currentTarget.selectionStart =
-                    e.currentTarget.selectionEnd = start + 2;
-                }, 0);
-              }
-            }}
-            className="w-full h-64 p-4 border-2 border-black rounded-base font-mono text-xs font-base focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 bg-secondary-background resize-none"
-            placeholder="struct MyStruct { ... };"
-            spellCheck={false}
-          />
+          <div className="border-2 border-black rounded-base overflow-hidden">
+            <CodeMirror
+              value={code}
+              height="300px"
+              extensions={[cpp()]}
+              onChange={(value) => setCode(value)}
+              theme="light"
+              basicSetup={{
+                lineNumbers: true,
+                highlightActiveLineGutter: true,
+                highlightSpecialChars: true,
+                foldGutter: true,
+                drawSelection: true,
+                dropCursor: true,
+                allowMultipleSelections: true,
+                indentOnInput: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                autocompletion: true,
+                rectangularSelection: true,
+                crosshairCursor: true,
+                highlightActiveLine: true,
+                highlightSelectionMatches: true,
+                closeBracketsKeymap: true,
+                searchKeymap: true,
+                foldKeymap: true,
+                completionKeymap: true,
+                lintKeymap: true,
+              }}
+              className="font-mono text-sm"
+            />
+          </div>
 
           {/* Real-time validation errors/warnings */}
           {validationErrors.length > 0 && !error && !success && (

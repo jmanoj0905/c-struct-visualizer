@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CStruct, StructInstance, PointerConnection } from "../types";
-import { exampleStructs } from "../examples/structs";
+import { canConnectPointer, resolveTypeName } from "../parser/structParser";
 
 interface HistoryState {
   structDefinitions: CStruct[];
@@ -65,7 +65,7 @@ const MAX_HISTORY_SIZE = 50;
 export const useCanvasStore = create<CanvasState>()(
   persist<CanvasState>(
     (set, get) => ({
-      structDefinitions: exampleStructs,
+      structDefinitions: [],
       history: [],
       historyIndex: -1,
 
@@ -139,17 +139,70 @@ export const useCanvasStore = create<CanvasState>()(
 
       updateStructDefinition: (oldName, newStruct) => {
         get().saveHistory();
-        set((state) => ({
-          structDefinitions: state.structDefinitions.map((s) =>
+        set((state) => {
+          const updatedStructDefinitions = state.structDefinitions.map((s) =>
             s.name === oldName ? newStruct : s,
-          ),
+          );
+
           // Update all instances of this struct
-          instances: state.instances.map((inst) =>
+          const updatedInstances = state.instances.map((inst) =>
             inst.structName === oldName
               ? { ...inst, structName: newStruct.name }
               : inst,
-          ),
-        }));
+          );
+
+          // Validate and remove invalid connections
+          // A connection is invalid if:
+          // 1. The source field no longer exists in the updated struct
+          // 2. The source field is no longer a pointer
+          // 3. The pointer type no longer matches the target struct
+          const validConnections = state.connections.filter((conn) => {
+            const sourceInstance = updatedInstances.find(
+              (i) => i.id === conn.sourceInstanceId,
+            );
+            const targetInstance = updatedInstances.find(
+              (i) => i.id === conn.targetInstanceId,
+            );
+
+            if (!sourceInstance || !targetInstance) return false;
+
+            // Find the struct definition for the source instance
+            const sourceStruct = updatedStructDefinitions.find(
+              (s) => s.name === sourceInstance.structName,
+            );
+
+            if (!sourceStruct) return false;
+
+            // Extract base field name (handle array notation like "next[0]")
+            const baseFieldName = conn.sourceFieldName.split("[")[0];
+
+            // Check if the field still exists in the updated struct
+            const sourceField = sourceStruct.fields.find(
+              (f) => f.name === baseFieldName,
+            );
+
+            // Connection is invalid if field doesn't exist or is no longer a pointer
+            if (!sourceField || !sourceField.isPointer) return false;
+
+            // Check if the pointer type still matches the target struct
+            const resolvedPointerType = resolveTypeName(
+              sourceField.type,
+              updatedStructDefinitions,
+            );
+            const resolvedTargetType = resolveTypeName(
+              targetInstance.structName,
+              updatedStructDefinitions,
+            );
+
+            return canConnectPointer(resolvedPointerType, resolvedTargetType);
+          });
+
+          return {
+            structDefinitions: updatedStructDefinitions,
+            instances: updatedInstances,
+            connections: validConnections,
+          };
+        });
       },
 
       deleteStructDefinition: (structName) => {

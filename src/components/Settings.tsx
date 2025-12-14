@@ -1,4 +1,4 @@
-import { X, BookOpen, Grid3x3 } from "lucide-react";
+import { X, BookOpen, Grid3x3, Github } from "lucide-react";
 import { useState } from "react";
 import { Button } from "./ui/button";
 import { UI_COLORS } from "../utils/colors";
@@ -17,8 +17,8 @@ const Settings = ({
   const [showGuide, setShowGuide] = useState(false);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-base w-full max-w-md mx-4 border-2 border-black shadow-shadow">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 modal-backdrop">
+      <div className="bg-white rounded-base w-full max-w-md mx-4 border-2 border-black shadow-shadow animate-scaleIn">
         {/* Header */}
         <div
           className="px-6 py-4 border-b-2 border-black flex items-center justify-between"
@@ -150,6 +150,29 @@ const Settings = ({
                 </Button>
               </div>
 
+              {/* GitHub Repository Link */}
+              <div>
+                <h3 className="text-sm font-heading tracking-tight mb-3">
+                  CONTRIBUTE
+                </h3>
+                <Button
+                  onClick={() =>
+                    window.open(
+                      "https://github.com/jmanoj0905/c-struct-visualizer",
+                      "_blank",
+                    )
+                  }
+                  className="w-full"
+                  style={{ backgroundColor: UI_COLORS.indigo }}
+                >
+                  <Github size={20} strokeWidth={2.5} />
+                  <span>GitHub Repository</span>
+                </Button>
+                <p className="text-xs font-base mt-2 text-center opacity-70">
+                  Report issues · Request features · Contribute
+                </p>
+              </div>
+
               {/* About Section */}
               <div>
                 <h3 className="text-sm font-heading tracking-tight mb-3">
@@ -175,21 +198,10 @@ const Settings = ({
 
               {/* Version */}
               <div className="text-center">
-                <div className="text-xs font-heading opacity-50">v1.2.0</div>
+                <div className="text-xs font-heading opacity-50">v1.3.0</div>
               </div>
             </>
           )}
-        </div>
-
-        {/* Close Button */}
-        <div className="p-4 border-t-2 border-black">
-          <Button
-            onClick={onClose}
-            className="w-full"
-            style={{ backgroundColor: UI_COLORS.pink }}
-          >
-            Close
-          </Button>
         </div>
       </div>
     </div>

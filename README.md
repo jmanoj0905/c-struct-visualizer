@@ -2,10 +2,12 @@
 
 An interactive, beginner-friendly visual tool for learning C structs, pointers, and data structures. Built with React, TypeScript, and React Flow, featuring a modern neobrutalist design aesthetic.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
+
+**[Try it live!](https://structviz.pages.dev/)**
 
 ## Features
 
@@ -15,8 +17,8 @@ An interactive, beginner-friendly visual tool for learning C structs, pointers, 
 - **Visual Pointers**: Connect pointers between structs with intuitive drag-and-drop
 - **Real-time Type Validation**: IDE-like syntax checking with line-by-line error reporting
 - **Multiple Instances**: Create unlimited instances with unique colors per struct type
-- **Smart Auto-Layout**: Intelligent graph arrangement for cyclic and acyclic structures
-- **Built-in Templates**: Quick-start with linked lists, binary trees, and graphs
+- **Smart Auto-Layout**: Intelligent graph arrangement with no overlaps for isolated structures
+- **8 Built-in Templates**: Quick-start with pre-configured data structures (singly/doubly linked lists, binary tree, BST, stack, queue, circular list, graph)
 - **Custom Structs**: Define complex structs with arrays, nested types, and function pointers
 
 ### Visual Features
@@ -28,9 +30,9 @@ An interactive, beginner-friendly visual tool for learning C structs, pointers, 
 ### Productivity Tools
 - **History System**: Full undo/redo support with keyboard shortcuts
 - **Import/Export**: Save and load your workspace as JSON
-- **PNG Export**: Export diagrams as high-quality images
+- **Multi-format Export**: Export as PNG, SVG, PDF, or copy to clipboard
 - **Right-click Menus**: Context-aware actions for quick operations
-- **Keyboard Shortcuts**: Efficient workflow with standard hotkeys
+- **Keyboard Shortcuts**: Efficient workflow with standard hotkeys (including Enter to confirm)
 - **Duplicate Nodes**: Ctrl+D to duplicate with connections preserved
 
 ## Perfect For
@@ -275,6 +277,62 @@ Contributions are welcome! Please see our contributing guidelines:
 - Update documentation
 - Ensure builds pass
 
+## Changelog
+
+### Version 1.3.0 (Latest)
+
+**New Features:**
+- **Magic Wand Auto-Layout**: Auto-layout button now uses a magic wand icon
+- **8 Data Structure Templates**: Pre-built templates with connected instances and sample data
+  - Singly Linked List (head → node_2 → node_3)
+  - Doubly Linked List (bidirectional connections)
+  - Binary Tree (root with left/right children)
+  - Binary Search Tree (with parent pointers)
+  - Stack (top → middle → bottom, vertical layout)
+  - Queue (front → middle → rear, horizontal layout)
+  - Circular List (4-node circle)
+  - Graph (adjacency list with edgeCount)
+- **Named Template Instances**: All templates include meaningful names (e.g., "top" for stack, "front"/"rear" for queue)
+- **Pre-filled Data Values**: Templates include sample numeric values for immediate visualization
+- **Improved UI Organization**: Templates moved to bottom sidebar with Save/Export merged into one dropdown
+
+**Improvements:**
+- **Zero-Overlap Auto-Layout**: Isolated structures are now properly separated using Union-Find algorithm
+- **Better Doubly Linked List Layout**: Horizontal alignment at same Y-coordinate
+- **Enter Key Support**: Press Enter to confirm/dismiss all popups and alerts
+- **Centered Confirmation Dialogs**: Important confirmations now appear in screen center
+- **Fixed Delete Bug**: Deleted instances no longer reappear after confirmation
+- **Updated Load Button**: New pink color to distinguish from Save/Export
+
+**Technical Changes:**
+- Removed redundant example files (structs.ts)
+- Cleaner initial state (empty canvas on first load)
+- Improved keyboard event handler dependencies
+- Better component separation in auto-layout algorithm
+
+### Version 1.2.0
+- Complete neobrutalism UI redesign
+- Improved auto-layout and validation
+- Enhanced visual feedback and animations
+
+## Future Features
+
+We're constantly improving C Struct Visualizer! Here are some planned enhancements:
+
+### Workspace Tabs/Projects
+**Problem:** Can only work on one diagram at a time
+
+**Planned Solution:**
+- Save multiple named workspaces/projects
+- Quick switch between different diagrams
+- "Recent workspaces" list for easy access
+- Tab-based interface for managing multiple projects simultaneously
+- Per-workspace settings and configurations
+
+This feature will allow users to manage multiple struct diagrams (e.g., one for each data structure assignment, or different versions of the same project) without having to constantly import/export workspaces.
+
+**Want this feature?** Let us know by opening an issue or giving it a thumbs up!
+
 ## Reporting Issues
 
 When reporting bugs, include:
@@ -292,6 +350,8 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Version 1.2.0** - Complete neobrutalism UI redesign with improved auto-layout and validation
+**Version 1.3.0** - Enhanced templates, zero-overlap auto-layout, and improved UX
+
+**Live Demo**: [structviz.pages.dev](https://structviz.pages.dev/)
 
 Made with ❤️ by [Manoj](https://github.com/jmanoj0905)

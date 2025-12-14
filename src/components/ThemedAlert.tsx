@@ -19,9 +19,10 @@ export interface AlertConfig {
 interface ThemedAlertProps {
   alert: AlertConfig & { id: string };
   onClose: (id: string) => void;
+  isLatest: boolean;
 }
 
-function ThemedAlert({ alert, onClose }: ThemedAlertProps) {
+function ThemedAlert({ alert, onClose, isLatest }: ThemedAlertProps) {
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
@@ -33,6 +34,26 @@ function ThemedAlert({ alert, onClose }: ThemedAlertProps) {
       return () => clearTimeout(timer);
     }
   }, [alert.duration, alert.type]);
+
+  // Handle Enter key - only for the latest alert
+  useEffect(() => {
+    if (!isLatest) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (alert.type === "confirm") {
+          handleConfirm();
+        } else {
+          handleClose();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [alert.type, isLatest]);
 
   const handleClose = () => {
     setIsExiting(true);

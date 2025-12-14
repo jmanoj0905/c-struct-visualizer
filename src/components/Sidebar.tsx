@@ -11,31 +11,58 @@ import {
   Network,
   ChevronDown,
   ChevronUp,
+  FileImage,
+  FileType,
+  Copy,
+  Box,
+  Layers,
+  Users,
+  Database,
 } from "lucide-react";
 import { useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import type { CStruct } from "../types";
 import { getStructColor, UI_COLORS } from "../utils/colors";
 import { Button } from "./ui/button";
+import { showAlert } from "./AlertContainer";
 
 interface SidebarProps {
   onEditStruct: (structName: string) => void;
-  onExport: () => void;
+  onExportPNG: () => void;
+  onExportSVG: () => void;
+  onExportPDF: () => void;
+  onCopyToClipboard: () => void;
   onAddInstance: (structName: string) => void;
   onDefineStruct: () => void;
 }
 
 // Template data structures
 const templates = {
-  linkedList: {
-    name: "Linked List",
+  singlyLinkedList: {
+    name: "Singly Linked List",
     icon: List,
     structs: [
       {
         name: "Node",
+        typedef: "Node_t",
         fields: [
           { name: "data", type: "int", isPointer: false, isArray: false },
           { name: "next", type: "Node", isPointer: true, isArray: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  doublyLinkedList: {
+    name: "Doubly Linked List",
+    icon: List,
+    structs: [
+      {
+        name: "DNode",
+        typedef: "DNode_t",
+        fields: [
+          { name: "data", type: "int", isPointer: false, isArray: false },
+          { name: "next", type: "DNode", isPointer: true, isArray: false },
+          { name: "prev", type: "DNode", isPointer: true, isArray: false },
         ],
       },
     ] as CStruct[],
@@ -46,8 +73,9 @@ const templates = {
     structs: [
       {
         name: "TreeNode",
+        typedef: "TreeNode_t",
         fields: [
-          { name: "data", type: "int", isPointer: false, isArray: false },
+          { name: "value", type: "int", isPointer: false, isArray: false },
           { name: "left", type: "TreeNode", isPointer: true, isArray: false },
           { name: "right", type: "TreeNode", isPointer: true, isArray: false },
         ],
@@ -60,15 +88,75 @@ const templates = {
     structs: [
       {
         name: "GraphNode",
+        typedef: "GraphNode_t",
         fields: [
           { name: "id", type: "int", isPointer: false, isArray: false },
           {
-            name: "neighbors",
+            name: "edges",
             type: "GraphNode",
             isPointer: true,
             isArray: true,
-            arraySize: 4,
+            arraySize: 5,
           },
+          { name: "edgeCount", type: "int", isPointer: false, isArray: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  stack: {
+    name: "Stack",
+    icon: Layers,
+    structs: [
+      {
+        name: "StackNode",
+        typedef: "StackNode_t",
+        fields: [
+          { name: "data", type: "int", isPointer: false, isArray: false },
+          { name: "next", type: "StackNode", isPointer: true, isArray: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  queue: {
+    name: "Queue",
+    icon: List,
+    structs: [
+      {
+        name: "QueueNode",
+        typedef: "QueueNode_t",
+        fields: [
+          { name: "data", type: "int", isPointer: false, isArray: false },
+          { name: "next", type: "QueueNode", isPointer: true, isArray: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  circularList: {
+    name: "Circular List",
+    icon: Network,
+    structs: [
+      {
+        name: "CircNode",
+        typedef: "CircNode_t",
+        fields: [
+          { name: "data", type: "int", isPointer: false, isArray: false },
+          { name: "next", type: "CircNode", isPointer: true, isArray: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  bst: {
+    name: "BST",
+    icon: GitBranch,
+    structs: [
+      {
+        name: "BSTNode",
+        typedef: "BSTNode_t",
+        fields: [
+          { name: "key", type: "int", isPointer: false, isArray: false },
+          { name: "left", type: "BSTNode", isPointer: true, isArray: false },
+          { name: "right", type: "BSTNode", isPointer: true, isArray: false },
+          { name: "parent", type: "BSTNode", isPointer: true, isArray: false },
         ],
       },
     ] as CStruct[],
@@ -77,7 +165,10 @@ const templates = {
 
 const Sidebar = ({
   onEditStruct,
-  onExport,
+  onExportPNG,
+  onExportSVG,
+  onExportPDF,
+  onCopyToClipboard,
   onAddInstance,
   onDefineStruct,
 }: SidebarProps) => {
@@ -89,9 +180,11 @@ const Sidebar = ({
     addStructDefinition,
     addInstance,
     addConnection,
+    instances,
   } = useCanvasStore();
 
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const handleDragStart = (event: React.DragEvent, structName: string) => {
     event.dataTransfer.setData("application/reactflow", structName);
@@ -99,13 +192,32 @@ const Sidebar = ({
   };
 
   const handleDeleteStruct = (structName: string) => {
-    if (
-      window.confirm(
-        `Delete struct "${structName}"? This will also remove all instances from the workspace.`,
-      )
-    ) {
-      deleteStructDefinition(structName);
+    // Count instances of this struct
+    const instanceCount = instances.filter(
+      (inst) => inst.structName === structName,
+    ).length;
+
+    let confirmMessage = "";
+    if (instanceCount > 0) {
+      confirmMessage = `Warning: There ${instanceCount === 1 ? "is" : "are"} ${instanceCount} instance${instanceCount === 1 ? "" : "s"} of "${structName}" in the workspace.\n\nDeleting this struct will also remove all ${instanceCount} instance${instanceCount === 1 ? "" : "s"} from the workspace.\n\nAre you sure you want to delete?`;
+    } else {
+      confirmMessage = `Are you sure you want to delete struct "${structName}"?`;
     }
+
+    showAlert({
+      type: "confirm",
+      message: confirmMessage,
+      onConfirm: () => {
+        deleteStructDefinition(structName);
+        showAlert({
+          type: "success",
+          message: `Struct "${structName}" deleted`,
+          duration: 2000,
+        });
+      },
+      confirmText: "Delete",
+      cancelText: "Cancel",
+    });
   };
 
   const handleSaveWorkspace = () => {
@@ -140,74 +252,52 @@ const Sidebar = ({
   const handleLoadTemplate = (templateKey: keyof typeof templates) => {
     const template = templates[templateKey];
 
-    // Get current struct definitions to avoid duplicates
-    const currentStructDefs = useCanvasStore.getState().structDefinitions;
-
-    // Handle struct name conflicts by adding _N suffix
-    const resolveStructName = (baseName: string): string => {
-      let name = baseName;
-      let counter = 1;
-      while (currentStructDefs.some((s) => s.name === name)) {
-        name = `${baseName}_${counter}`;
-        counter++;
-      }
-      return name;
-    };
-
-    // Check if struct already exists, if so, use existing name
-    const structNameMap = new Map<string, string>(); // old name -> resolved name
-    const structsToAdd: Array<{
-      name: string;
-      fields: (typeof template.structs)[0]["fields"];
-    }> = [];
-
-    template.structs.forEach((struct) => {
-      const existing = currentStructDefs.find((s) => s.name === struct.name);
-      if (existing) {
-        // Use existing struct, don't create duplicate
-        structNameMap.set(struct.name, existing.name);
-      } else {
-        // Need to create new struct
-        const newName = resolveStructName(struct.name);
-        structNameMap.set(struct.name, newName);
-        structsToAdd.push({ name: newName, fields: struct.fields });
-      }
+    showAlert({
+      type: "info",
+      message: `Loading ${template.name} template...`,
+      duration: 1500,
     });
 
-    // Add only new structs
-    structsToAdd.forEach((struct) => {
-      // Update field types to use resolved struct names
-      const updatedFields = struct.fields.map((field) => ({
-        ...field,
-        type: structNameMap.get(field.type) || field.type,
-      }));
+    // Add struct definitions if they don't exist
+    template.structs.forEach((templateStruct) => {
+      const currentStructDefs = useCanvasStore.getState().structDefinitions;
+      const existing = currentStructDefs.find(
+        (s) => s.name === templateStruct.name,
+      );
 
-      addStructDefinition({
-        name: struct.name,
-        fields: updatedFields,
-      });
+      if (!existing) {
+        addStructDefinition({
+          name: templateStruct.name,
+          typedef: templateStruct.typedef,
+          fields: templateStruct.fields,
+        });
+      }
     });
 
     // Create sample instances based on template type
     setTimeout(() => {
       const latestStructDefs = useCanvasStore.getState().structDefinitions;
+      const { updateFieldValue } = useCanvasStore.getState();
 
-      if (templateKey === "linkedList") {
+      if (templateKey === "singlyLinkedList") {
         // Create 3 linked list nodes
-        const finalStructName = structNameMap.get("Node")!;
-        const struct = latestStructDefs.find((s) => s.name === finalStructName);
+        const struct = latestStructDefs.find((s) => s.name === "Node");
         if (!struct) return;
 
-        addInstance(struct, { x: 100, y: 200 }, undefined);
-        addInstance(struct, { x: 400, y: 200 }, undefined);
-        addInstance(struct, { x: 700, y: 200 }, undefined);
+        addInstance(struct, { x: 100, y: 200 }, "head");
+        addInstance(struct, { x: 400, y: 200 }, "node_2");
+        addInstance(struct, { x: 700, y: 200 }, "node_3");
 
-        // Connect them after instances are created
+        // Set field values and connect
         setTimeout(() => {
           const allInstances = useCanvasStore.getState().instances;
           const inst1 = allInstances[allInstances.length - 3];
           const inst2 = allInstances[allInstances.length - 2];
           const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 10);
+          if (inst2) updateFieldValue(inst2.id, "data", 20);
+          if (inst3) updateFieldValue(inst3.id, "data", 30);
 
           if (inst1 && inst2) {
             addConnection({
@@ -224,21 +314,69 @@ const Sidebar = ({
             });
           }
         }, 100);
-      } else if (templateKey === "tree") {
-        // Create a small binary tree (root + 2 children)
-        const finalStructName = structNameMap.get("TreeNode")!;
-        const struct = latestStructDefs.find((s) => s.name === finalStructName);
+      } else if (templateKey === "doublyLinkedList") {
+        // Create 3 doubly linked list nodes in horizontal line
+        const struct = latestStructDefs.find((s) => s.name === "DNode");
         if (!struct) return;
 
-        addInstance(struct, { x: 400, y: 100 }, undefined);
-        addInstance(struct, { x: 200, y: 300 }, undefined);
-        addInstance(struct, { x: 600, y: 300 }, undefined);
+        addInstance(struct, { x: 100, y: 250 }, "node_1");
+        addInstance(struct, { x: 400, y: 250 }, "node_2");
+        addInstance(struct, { x: 700, y: 250 }, "node_3");
+
+        // Set field values and connect bidirectionally
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 5);
+          if (inst2) updateFieldValue(inst2.id, "data", 10);
+          if (inst3) updateFieldValue(inst3.id, "data", 15);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "prev",
+              targetInstanceId: inst1.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+            addConnection({
+              sourceInstanceId: inst3.id,
+              sourceFieldName: "prev",
+              targetInstanceId: inst2.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "tree") {
+        // Create a small binary tree (root + 2 children)
+        const struct = latestStructDefs.find((s) => s.name === "TreeNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 400, y: 100 }, "root");
+        addInstance(struct, { x: 200, y: 300 }, "left_child");
+        addInstance(struct, { x: 600, y: 300 }, "right_child");
 
         setTimeout(() => {
           const allInstances = useCanvasStore.getState().instances;
           const rootInst = allInstances[allInstances.length - 3];
           const leftInst = allInstances[allInstances.length - 2];
           const rightInst = allInstances[allInstances.length - 1];
+
+          if (rootInst) updateFieldValue(rootInst.id, "value", 50);
+          if (leftInst) updateFieldValue(leftInst.id, "value", 30);
+          if (rightInst) updateFieldValue(rightInst.id, "value", 70);
 
           if (rootInst && leftInst) {
             addConnection({
@@ -257,14 +395,13 @@ const Sidebar = ({
         }, 100);
       } else if (templateKey === "graph") {
         // Create 4 graph nodes with some connections
-        const finalStructName = structNameMap.get("GraphNode")!;
-        const struct = latestStructDefs.find((s) => s.name === finalStructName);
+        const struct = latestStructDefs.find((s) => s.name === "GraphNode");
         if (!struct) return;
 
-        addInstance(struct, { x: 200, y: 200 }, undefined);
-        addInstance(struct, { x: 500, y: 200 }, undefined);
-        addInstance(struct, { x: 200, y: 400 }, undefined);
-        addInstance(struct, { x: 500, y: 400 }, undefined);
+        addInstance(struct, { x: 200, y: 200 }, "node_A");
+        addInstance(struct, { x: 500, y: 200 }, "node_B");
+        addInstance(struct, { x: 200, y: 400 }, "node_C");
+        addInstance(struct, { x: 500, y: 400 }, "node_D");
 
         setTimeout(() => {
           const allInstances = useCanvasStore.getState().instances;
@@ -273,18 +410,35 @@ const Sidebar = ({
           const inst3 = allInstances[allInstances.length - 2];
           const inst4 = allInstances[allInstances.length - 1];
 
+          if (inst1) {
+            updateFieldValue(inst1.id, "id", 1);
+            updateFieldValue(inst1.id, "edgeCount", 2);
+          }
+          if (inst2) {
+            updateFieldValue(inst2.id, "id", 2);
+            updateFieldValue(inst2.id, "edgeCount", 1);
+          }
+          if (inst3) {
+            updateFieldValue(inst3.id, "id", 3);
+            updateFieldValue(inst3.id, "edgeCount", 0);
+          }
+          if (inst4) {
+            updateFieldValue(inst4.id, "id", 4);
+            updateFieldValue(inst4.id, "edgeCount", 0);
+          }
+
           // Connect node1 to node2 and node3
           if (inst1 && inst2) {
             addConnection({
               sourceInstanceId: inst1.id,
-              sourceFieldName: "neighbors[0]",
+              sourceFieldName: "edges[0]",
               targetInstanceId: inst2.id,
             });
           }
           if (inst1 && inst3) {
             addConnection({
               sourceInstanceId: inst1.id,
-              sourceFieldName: "neighbors[1]",
+              sourceFieldName: "edges[1]",
               targetInstanceId: inst3.id,
             });
           }
@@ -292,8 +446,172 @@ const Sidebar = ({
           if (inst2 && inst4) {
             addConnection({
               sourceInstanceId: inst2.id,
-              sourceFieldName: "neighbors[0]",
+              sourceFieldName: "edges[0]",
               targetInstanceId: inst4.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "stack") {
+        // Create 3 nodes in a vertical stack
+        const struct = latestStructDefs.find((s) => s.name === "StackNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 300, y: 100 }, "top");
+        addInstance(struct, { x: 300, y: 250 }, "middle");
+        addInstance(struct, { x: 300, y: 400 }, "bottom");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 100);
+          if (inst2) updateFieldValue(inst2.id, "data", 200);
+          if (inst3) updateFieldValue(inst3.id, "data", 300);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "queue") {
+        // Create 3 nodes in a horizontal queue
+        const struct = latestStructDefs.find((s) => s.name === "QueueNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 100, y: 250 }, "front");
+        addInstance(struct, { x: 400, y: 250 }, "middle");
+        addInstance(struct, { x: 700, y: 250 }, "rear");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 1);
+          if (inst2) updateFieldValue(inst2.id, "data", 2);
+          if (inst3) updateFieldValue(inst3.id, "data", 3);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "circularList") {
+        // Create 4 nodes in a circle
+        const struct = latestStructDefs.find((s) => s.name === "CircNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 300, y: 100 }, "node_1");
+        addInstance(struct, { x: 500, y: 200 }, "node_2");
+        addInstance(struct, { x: 300, y: 400 }, "node_3");
+        addInstance(struct, { x: 100, y: 200 }, "node_4");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 4];
+          const inst2 = allInstances[allInstances.length - 3];
+          const inst3 = allInstances[allInstances.length - 2];
+          const inst4 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 10);
+          if (inst2) updateFieldValue(inst2.id, "data", 20);
+          if (inst3) updateFieldValue(inst3.id, "data", 30);
+          if (inst4) updateFieldValue(inst4.id, "data", 40);
+
+          // Create circular connections
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+          if (inst3 && inst4) {
+            addConnection({
+              sourceInstanceId: inst3.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst4.id,
+            });
+          }
+          if (inst4 && inst1) {
+            addConnection({
+              sourceInstanceId: inst4.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst1.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "bst") {
+        // Create a BST with root and children with parent pointers
+        const struct = latestStructDefs.find((s) => s.name === "BSTNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 400, y: 100 }, "root");
+        addInstance(struct, { x: 200, y: 300 }, "left");
+        addInstance(struct, { x: 600, y: 300 }, "right");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const rootInst = allInstances[allInstances.length - 3];
+          const leftInst = allInstances[allInstances.length - 2];
+          const rightInst = allInstances[allInstances.length - 1];
+
+          if (rootInst) updateFieldValue(rootInst.id, "key", 50);
+          if (leftInst) updateFieldValue(leftInst.id, "key", 25);
+          if (rightInst) updateFieldValue(rightInst.id, "key", 75);
+
+          if (rootInst && leftInst) {
+            addConnection({
+              sourceInstanceId: rootInst.id,
+              sourceFieldName: "left",
+              targetInstanceId: leftInst.id,
+            });
+            addConnection({
+              sourceInstanceId: leftInst.id,
+              sourceFieldName: "parent",
+              targetInstanceId: rootInst.id,
+            });
+          }
+          if (rootInst && rightInst) {
+            addConnection({
+              sourceInstanceId: rootInst.id,
+              sourceFieldName: "right",
+              targetInstanceId: rightInst.id,
+            });
+            addConnection({
+              sourceInstanceId: rightInst.id,
+              sourceFieldName: "parent",
+              targetInstanceId: rootInst.id,
             });
           }
         }, 100);
@@ -315,47 +633,6 @@ const Sidebar = ({
 
       {/* Struct List */}
       <div className="flex-1 overflow-y-auto p-3">
-        {/* Templates Section */}
-        <div className="mb-4">
-          <Button
-            variant="neutral"
-            size="sm"
-            onClick={() => setShowTemplates(!showTemplates)}
-            className="w-full flex items-center justify-between font-heading text-sm tracking-wide"
-          >
-            <span className="uppercase">Templates</span>
-            {showTemplates ? (
-              <ChevronUp size={16} strokeWidth={3} />
-            ) : (
-              <ChevronDown size={16} strokeWidth={3} />
-            )}
-          </Button>
-
-          {showTemplates && (
-            <div className="grid grid-cols-3 gap-2 mt-2">
-              {Object.entries(templates).map(([key, template]) => {
-                const Icon = template.icon;
-                return (
-                  <button
-                    key={key}
-                    onClick={() =>
-                      handleLoadTemplate(key as keyof typeof templates)
-                    }
-                    className="border-2 border-black rounded-base p-2 flex flex-col items-center gap-1 transition shadow-shadow hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
-                    style={{ backgroundColor: UI_COLORS.cyan }}
-                    title={`Load ${template.name}`}
-                  >
-                    <Icon size={18} strokeWidth={2.5} />
-                    <span className="text-[10px] font-heading text-center leading-tight">
-                      {template.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
         <div className="space-y-2">
           {structDefinitions.map((struct) => {
             const allStructNames = structDefinitions.map((s) => s.name);
@@ -434,37 +711,141 @@ const Sidebar = ({
         )}
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons at Bottom */}
       <div className="p-3 border-t-4 border-black space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+        {/* Templates Section */}
+        <div>
           <Button
-            onClick={handleSaveWorkspace}
+            variant="neutral"
             size="sm"
-            style={{ backgroundColor: UI_COLORS.blue }}
-            title="Save Workspace"
+            onClick={() => setShowTemplates(!showTemplates)}
+            className="w-full flex items-center justify-between font-heading text-sm tracking-wide"
           >
-            <Save size={16} strokeWidth={2.5} />
-            <span>Save</span>
+            <span className="uppercase">Templates</span>
+            {showTemplates ? (
+              <ChevronUp size={16} strokeWidth={3} />
+            ) : (
+              <ChevronDown size={16} strokeWidth={3} />
+            )}
           </Button>
+
+          {showTemplates && (
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {Object.entries(templates).map(([key, template]) => {
+                const Icon = template.icon;
+                return (
+                  <button
+                    key={key}
+                    onClick={() =>
+                      handleLoadTemplate(key as keyof typeof templates)
+                    }
+                    className="border-2 border-black rounded-base p-2 flex flex-col items-center gap-1 transition shadow-shadow hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
+                    style={{ backgroundColor: UI_COLORS.cyan }}
+                    title={`Load ${template.name}`}
+                  >
+                    <Icon size={18} strokeWidth={2.5} />
+                    <span className="text-[10px] font-heading text-center leading-tight">
+                      {template.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Save/Export and Load buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* Save/Export combined dropdown */}
+          <div className="relative">
+            <Button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              size="sm"
+              style={{ backgroundColor: UI_COLORS.blue }}
+              title="Save & Export"
+              className="w-full"
+            >
+              <Save size={16} strokeWidth={2.5} />
+              <span>Save</span>
+              {showExportMenu ? (
+                <ChevronUp size={14} strokeWidth={2.5} />
+              ) : (
+                <ChevronDown size={14} strokeWidth={2.5} />
+              )}
+            </Button>
+
+            {showExportMenu && (
+              <div className="absolute bottom-full mb-2 left-0 right-0 space-y-1 border-2 border-black rounded-base p-2 bg-white dropdown-menu">
+                <button
+                  onClick={() => {
+                    handleSaveWorkspace();
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-heading rounded-base hover:bg-gray-100 border-2 border-transparent hover:border-black transition-all flex items-center gap-2"
+                  title="Save workspace as JSON"
+                >
+                  <Save size={16} strokeWidth={2.5} />
+                  <span>Save JSON</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onExportPNG();
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-heading rounded-base hover:bg-gray-100 border-2 border-transparent hover:border-black transition-all flex items-center gap-2"
+                  title="Export as PNG image"
+                >
+                  <FileImage size={16} strokeWidth={2.5} />
+                  <span>PNG Image</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onExportSVG();
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-heading rounded-base hover:bg-gray-100 border-2 border-transparent hover:border-black transition-all flex items-center gap-2"
+                  title="Export as SVG (scalable vector)"
+                >
+                  <FileType size={16} strokeWidth={2.5} />
+                  <span>SVG Vector</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onExportPDF();
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-heading rounded-base hover:bg-gray-100 border-2 border-transparent hover:border-black transition-all flex items-center gap-2"
+                  title="Export as PDF document"
+                >
+                  <FileCode size={16} strokeWidth={2.5} />
+                  <span>PDF Document</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onCopyToClipboard();
+                    setShowExportMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-heading rounded-base hover:bg-gray-100 border-2 border-transparent hover:border-black transition-all flex items-center gap-2"
+                  title="Copy image to clipboard"
+                >
+                  <Copy size={16} strokeWidth={2.5} />
+                  <span>Copy to Clipboard</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Load button */}
           <Button
             onClick={handleLoadWorkspace}
             size="sm"
-            style={{ backgroundColor: UI_COLORS.emerald }}
+            style={{ backgroundColor: UI_COLORS.pink }}
             title="Load Workspace"
           >
             <Upload size={16} strokeWidth={2.5} />
             <span>Load</span>
           </Button>
         </div>
-        <Button
-          onClick={onExport}
-          className="w-full"
-          style={{ backgroundColor: UI_COLORS.purple }}
-          title="Export to PNG"
-        >
-          <Download size={16} strokeWidth={2.5} />
-          <span>Export PNG</span>
-        </Button>
       </div>
     </div>
   );

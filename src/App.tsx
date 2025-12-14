@@ -18,7 +18,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   Plus,
-  LayoutGrid,
+  Wand2,
   Trash2,
   Settings as SettingsIcon,
   ChevronLeft,
@@ -29,7 +29,8 @@ import {
   Redo,
   Maximize2,
 } from "lucide-react";
-import { toPng } from "html-to-image";
+import { toPng, toSvg } from "html-to-image";
+import jsPDF from "jspdf";
 import ELK from "elkjs/lib/elk.bundled.js";
 import AlertContainer, { showAlert } from "./components/AlertContainer";
 
@@ -124,46 +125,166 @@ function FlowCanvas() {
     sourceFieldName: string;
     pointerType: string;
     position: { x: number; y: number };
+    flowPosition?: { x: number; y: number };
   } | null>(null);
   const [popupSearch, setPopupSearch] = useState("");
 
-  const handleExportImage = useCallback(() => {
+  const getViewportElement = useCallback(() => {
     const rfWrapper = reactFlowWrapper.current;
-    if (!rfWrapper) return;
+    if (!rfWrapper) return null;
+    return rfWrapper.querySelector(".react-flow__viewport") as HTMLElement;
+  }, []);
 
-    const viewport = rfWrapper.querySelector(
-      ".react-flow__viewport",
-    ) as HTMLElement;
+  const exportFilter = (node: HTMLElement) => {
+    // Exclude controls and other UI elements from export
+    if (
+      node?.classList?.contains("react-flow__controls") ||
+      node?.classList?.contains("react-flow__minimap") ||
+      node?.classList?.contains("react-flow__panel")
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  const handleExportPNG = useCallback(() => {
+    const viewport = getViewportElement();
     if (!viewport) return;
 
     toPng(viewport, {
       backgroundColor: "#f3f4f6",
-      filter: (node) => {
-        // Exclude controls and other UI elements from export
-        if (
-          node?.classList?.contains("react-flow__controls") ||
-          node?.classList?.contains("react-flow__minimap") ||
-          node?.classList?.contains("react-flow__panel")
-        ) {
-          return false;
-        }
-        return true;
-      },
+      filter: exportFilter,
     })
       .then((dataUrl) => {
         const link = document.createElement("a");
         link.download = `c-struct-diagram-${Date.now()}.png`;
         link.href = dataUrl;
         link.click();
+        showAlert({
+          type: "success",
+          message: "PNG exported successfully!",
+          duration: 2000,
+        });
       })
       .catch((err) => {
-        console.error("Failed to export image:", err);
+        console.error("Failed to export PNG:", err);
         showAlert({
           type: "error",
-          message: "Failed to export image. Please try again.",
+          message: "Failed to export PNG. Please try again.",
         });
       });
-  }, []);
+  }, [getViewportElement]);
+
+  const handleExportSVG = useCallback(() => {
+    const viewport = getViewportElement();
+    if (!viewport) return;
+
+    toSvg(viewport, {
+      backgroundColor: "#f3f4f6",
+      filter: exportFilter,
+    })
+      .then((dataUrl) => {
+        const link = document.createElement("a");
+        link.download = `c-struct-diagram-${Date.now()}.svg`;
+        link.href = dataUrl;
+        link.click();
+        showAlert({
+          type: "success",
+          message: "SVG exported successfully!",
+          duration: 2000,
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to export SVG:", err);
+        showAlert({
+          type: "error",
+          message: "Failed to export SVG. Please try again.",
+        });
+      });
+  }, [getViewportElement]);
+
+  const handleExportPDF = useCallback(() => {
+    const viewport = getViewportElement();
+    if (!viewport) return;
+
+    toPng(viewport, {
+      backgroundColor: "#f3f4f6",
+      filter: exportFilter,
+      pixelRatio: 2, // Higher quality for PDF
+    })
+      .then((dataUrl) => {
+        const img = new Image();
+        img.src = dataUrl;
+        img.onload = () => {
+          const pdf = new jsPDF({
+            orientation: img.width > img.height ? "landscape" : "portrait",
+            unit: "px",
+            format: [img.width, img.height],
+          });
+          pdf.addImage(dataUrl, "PNG", 0, 0, img.width, img.height);
+          pdf.save(`c-struct-diagram-${Date.now()}.pdf`);
+          showAlert({
+            type: "success",
+            message: "PDF exported successfully!",
+            duration: 2000,
+          });
+        };
+      })
+      .catch((err) => {
+        console.error("Failed to export PDF:", err);
+        showAlert({
+          type: "error",
+          message: "Failed to export PDF. Please try again.",
+        });
+      });
+  }, [getViewportElement]);
+
+  const handleCopyToClipboard = useCallback(() => {
+    const viewport = getViewportElement();
+    if (!viewport) return;
+
+    toPng(viewport, {
+      backgroundColor: "#f3f4f6",
+      filter: exportFilter,
+    })
+      .then((dataUrl) => {
+        // Convert data URL to blob
+        fetch(dataUrl)
+          .then((res) => res.blob())
+          .then((blob) => {
+            // Copy to clipboard
+            navigator.clipboard
+              .write([
+                new ClipboardItem({
+                  [blob.type]: blob,
+                }),
+              ])
+              .then(() => {
+                showAlert({
+                  type: "success",
+                  message: "Copied to clipboard!",
+                  duration: 2000,
+                });
+              })
+              .catch((err) => {
+                console.error("Failed to copy to clipboard:", err);
+                showAlert({
+                  type: "error",
+                  message:
+                    "Failed to copy to clipboard. Your browser may not support this feature.",
+                  duration: 3000,
+                });
+              });
+          });
+      })
+      .catch((err) => {
+        console.error("Failed to copy to clipboard:", err);
+        showAlert({
+          type: "error",
+          message: "Failed to copy to clipboard. Please try again.",
+        });
+      });
+  }, [getViewportElement]);
 
   // Convert instances to React Flow nodes
   const reactFlowNodes: Node[] = instances.map((instance) => {
@@ -283,13 +404,14 @@ function FlowCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Handle Shift key for selection mode toggle and Space for pan mode toggle
+  // Handle Shift key for selection mode toggle and ESC to cancel operations
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore if user is typing in an input
+      // Ignore if user is typing in an input or if struct editor is open
       if (
         event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement
+        event.target instanceof HTMLTextAreaElement ||
+        showEditor
       ) {
         return;
       }
@@ -298,20 +420,36 @@ function FlowCanvas() {
         setIsSelecting(true);
       }
 
-      if (event.key === " " && isSelecting) {
-        event.preventDefault(); // Prevent page scroll
-        setIsSelecting(false);
+      // ESC to cancel operations
+      if (event.key === "Escape") {
+        // Close connection popup
+        if (connectionPopup) {
+          setConnectionPopup(null);
+          showAlert({
+            type: "success",
+            message: "Connection cancelled",
+            duration: 1500,
+          });
+        }
+        // Close context menu
+        if (contextMenu) {
+          setContextMenu(null);
+        }
+        // Close quick add menu
+        if (quickAddMenu) {
+          setQuickAddMenu(null);
+        }
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === "Shift" && isSelecting) {
-        setIsSelecting(false);
+      // Ignore if struct editor is open
+      if (showEditor) {
+        return;
       }
 
-      if (event.key === " " && !isSelecting) {
-        event.preventDefault(); // Prevent page scroll
-        setIsSelecting(true);
+      if (event.key === "Shift" && isSelecting) {
+        setIsSelecting(false);
       }
     };
 
@@ -321,15 +459,16 @@ function FlowCanvas() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isSelecting]);
+  }, [isSelecting, showEditor, connectionPopup, contextMenu, quickAddMenu]);
 
   // Handle keyboard shortcuts for bulk operations
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore if user is typing in an input
+      // Ignore if user is typing in an input or if struct editor is open
       if (
         event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement
+        event.target instanceof HTMLTextAreaElement ||
+        showEditor
       ) {
         return;
       }
@@ -590,11 +729,16 @@ function FlowCanvas() {
   }, [
     nodes,
     removeInstance,
+    removeInstances,
     copiedNodes,
     instances,
     structDefinitions,
     addInstance,
     highlightedPath,
+    showEditor,
+    connectionPopup,
+    contextMenu,
+    quickAddMenu,
   ]);
 
   // Sync nodes and edges when store changes
@@ -926,12 +1070,18 @@ function FlowCanvas() {
 
       if (!sourceField || !sourceField.isPointer) return;
 
-      // Get mouse position
+      // Get mouse position (screen coordinates for popup)
       const mouseEvent = event as MouseEvent;
-      const position = {
+      const screenPosition = {
         x: mouseEvent.clientX,
         y: mouseEvent.clientY,
       };
+
+      // Convert to flow coordinates for spawning the struct
+      const flowPosition = screenToFlowPosition({
+        x: mouseEvent.clientX,
+        y: mouseEvent.clientY,
+      });
 
       // Show connection popup and reset search
       setConnectionPopup({
@@ -939,11 +1089,12 @@ function FlowCanvas() {
         sourceInstanceId,
         sourceFieldName: fieldName,
         pointerType: sourceField.type,
-        position,
+        position: screenPosition,
+        flowPosition, // Store flow position for spawning
       });
       setPopupSearch(""); // Reset search when popup opens
     },
-    [instances, structDefinitions],
+    [instances, structDefinitions, screenToFlowPosition],
   );
 
   // Auto-layout using ELK.js algorithm with support for orphaned nodes
@@ -972,6 +1123,70 @@ function FlowCanvas() {
     );
     const orphanedInstances = instances.filter(
       (inst) => !connectedNodeIds.has(inst.id),
+    );
+
+    // Find separate connected components in acyclic nodes using Union-Find
+    const findConnectedComponents = (
+      nodes: typeof acyclicInstances,
+      edges: typeof connections,
+    ): string[][] => {
+      const parent = new Map<string, string>();
+      const rank = new Map<string, number>();
+
+      nodes.forEach((node) => {
+        parent.set(node.id, node.id);
+        rank.set(node.id, 0);
+      });
+
+      const find = (id: string): string => {
+        if (parent.get(id) !== id) {
+          parent.set(id, find(parent.get(id)!));
+        }
+        return parent.get(id)!;
+      };
+
+      const union = (id1: string, id2: string) => {
+        const root1 = find(id1);
+        const root2 = find(id2);
+        if (root1 === root2) return;
+
+        const rank1 = rank.get(root1) || 0;
+        const rank2 = rank.get(root2) || 0;
+
+        if (rank1 < rank2) {
+          parent.set(root1, root2);
+        } else if (rank1 > rank2) {
+          parent.set(root2, root1);
+        } else {
+          parent.set(root2, root1);
+          rank.set(root1, rank1 + 1);
+        }
+      };
+
+      edges.forEach((edge) => {
+        if (
+          parent.has(edge.sourceInstanceId) &&
+          parent.has(edge.targetInstanceId)
+        ) {
+          union(edge.sourceInstanceId, edge.targetInstanceId);
+        }
+      });
+
+      const components = new Map<string, string[]>();
+      nodes.forEach((node) => {
+        const root = find(node.id);
+        if (!components.has(root)) {
+          components.set(root, []);
+        }
+        components.get(root)!.push(node.id);
+      });
+
+      return Array.from(components.values());
+    };
+
+    const acyclicComponents = findConnectedComponents(
+      acyclicInstances,
+      connections,
     );
 
     try {
@@ -1003,8 +1218,14 @@ function FlowCanvas() {
         circularLayouts.push(layout);
       }
 
-      // Layout acyclic nodes with ELK if any exist
-      if (acyclicInstances.length > 0 && connections.length > 0) {
+      // Layout each acyclic component separately with ELK
+      let componentOffsetX = 50;
+      for (const componentIds of acyclicComponents) {
+        if (componentIds.length === 0) continue;
+
+        const componentInstances = instances.filter((inst) =>
+          componentIds.includes(inst.id),
+        );
         // Helper to get field order for priority calculation
         const getFieldIndex = (
           instanceId: string,
@@ -1038,12 +1259,12 @@ function FlowCanvas() {
           return fieldIndex * 1000;
         };
 
-        // Only edges between acyclic nodes for ELK
-        const acyclicNodeSet = new Set(acyclicInstances.map((i) => i.id));
-        const acyclicConnections = connections.filter(
+        // Only edges within this component
+        const componentNodeSet = new Set(componentIds);
+        const componentConnections = connections.filter(
           (c) =>
-            acyclicNodeSet.has(c.sourceInstanceId) &&
-            acyclicNodeSet.has(c.targetInstanceId),
+            componentNodeSet.has(c.sourceInstanceId) &&
+            componentNodeSet.has(c.targetInstanceId),
         );
 
         const elkGraph = {
@@ -1061,9 +1282,9 @@ function FlowCanvas() {
             "elk.spacing.edgeEdge": "40",
             "elk.layered.spacing.edgeNodeBetweenLayers": "60",
             "elk.layered.spacing.baseValue": "80",
-            "elk.separateConnectedComponents": "true",
+            "elk.separateConnectedComponents": "false",
           },
-          children: acyclicInstances.map((instance) => {
+          children: componentInstances.map((instance) => {
             const struct = structDefinitions.find(
               (s) => s.name === instance.structName,
             );
@@ -1078,7 +1299,7 @@ function FlowCanvas() {
               height: Math.max(250, calculatedHeight),
             };
           }),
-          edges: acyclicConnections.map((conn, index) => {
+          edges: componentConnections.map((conn, index) => {
             const fieldOrder = getFieldIndex(
               conn.sourceInstanceId,
               conn.sourceFieldName,
@@ -1097,17 +1318,23 @@ function FlowCanvas() {
 
         const layout = await elk.layout(elkGraph);
 
-        // Apply calculated positions for acyclic nodes
+        // Apply calculated positions for this component
+        let componentMaxX = 0;
         layout.children?.forEach((node) => {
           if (node.x !== undefined && node.y !== undefined) {
             updateInstancePosition(node.id, {
-              x: node.x,
-              y: node.y,
+              x: node.x + componentOffsetX,
+              y: node.y + 50,
             });
+            const nodeWidth = node.width || 350;
             const nodeHeight = node.height || 200;
-            maxY = Math.max(maxY, node.y + nodeHeight);
+            componentMaxX = Math.max(componentMaxX, node.x + nodeWidth);
+            maxY = Math.max(maxY, node.y + nodeHeight + 50);
           }
         });
+
+        // Update offset for next component (add gap between components)
+        componentOffsetX += componentMaxX + 200;
       }
 
       // Combine and apply circular layouts
@@ -1117,8 +1344,8 @@ function FlowCanvas() {
           verticalGap: 100,
         });
 
-        // Position circular layouts below acyclic layout
-        const circularStartY = acyclicInstances.length > 0 ? maxY + 150 : 50;
+        // Position circular layouts below acyclic components
+        const circularStartY = acyclicComponents.length > 0 ? maxY + 150 : 50;
 
         combined.positions.forEach((pos, id) => {
           updateInstancePosition(id, {
@@ -1133,7 +1360,7 @@ function FlowCanvas() {
       // Layout orphaned nodes below in a grid
       if (orphanedInstances.length > 0) {
         const orphanStartY =
-          circularLayouts.length > 0 || acyclicInstances.length > 0
+          circularLayouts.length > 0 || acyclicComponents.length > 0
             ? maxY + 150
             : 50;
         const orphanStartX = 50;
@@ -1247,7 +1474,10 @@ function FlowCanvas() {
             setEditingStructName(structName);
             setShowEditor(true);
           }}
-          onExport={handleExportImage}
+          onExportPNG={handleExportPNG}
+          onExportSVG={handleExportSVG}
+          onExportPDF={handleExportPDF}
+          onCopyToClipboard={handleCopyToClipboard}
           onAddInstance={handleAddInstanceFromSidebar}
           onDefineStruct={() => {
             setEditingStructName(undefined);
@@ -1357,6 +1587,16 @@ function FlowCanvas() {
 
       {/* Top-right buttons */}
       <div className="fixed top-4 right-4 flex gap-3 z-10">
+        {/* Auto arrange layout button */}
+        <Button
+          size="icon"
+          onClick={handleCleanupLayout}
+          style={{ backgroundColor: UI_COLORS.indigo }}
+          title="Auto arrange layout"
+        >
+          <Wand2 size={22} strokeWidth={2.5} />
+        </Button>
+
         {/* Settings button */}
         <Button
           size="icon"
@@ -1404,16 +1644,6 @@ function FlowCanvas() {
           title="Fit to window"
         >
           <Maximize2 size={22} strokeWidth={2.5} />
-        </Button>
-
-        {/* Cleanup layout button */}
-        <Button
-          size="icon"
-          onClick={handleCleanupLayout}
-          style={{ backgroundColor: UI_COLORS.indigo }}
-          title="Auto arrange layout"
-        >
-          <LayoutGrid size={22} strokeWidth={2.5} />
         </Button>
       </div>
 
@@ -1527,13 +1757,21 @@ function FlowCanvas() {
                   // Select the first one
                   if (filteredStructs.length > 0) {
                     const topStruct = filteredStructs[0];
-                    const sourceInstance = instances.find(
-                      (i) => i.id === connectionPopup.sourceInstanceId,
-                    );
-                    const newPosition = {
-                      x: (sourceInstance?.position.x || 0) + 350,
-                      y: sourceInstance?.position.y || 0,
-                    };
+
+                    // Use the flow position where the user dropped the pointer
+                    const newPosition = connectionPopup.flowPosition
+                      ? {
+                          x:
+                            Math.round(connectionPopup.flowPosition.x / 20) *
+                            20,
+                          y:
+                            Math.round(connectionPopup.flowPosition.y / 20) *
+                            20,
+                        }
+                      : {
+                          x: 0,
+                          y: 0,
+                        };
 
                     addInstance(topStruct, newPosition, undefined);
 
@@ -1543,6 +1781,20 @@ function FlowCanvas() {
                       const newInstance =
                         updatedInstances[updatedInstances.length - 1];
                       if (newInstance) {
+                        // Check if this pointer already has a connection and remove it
+                        const existingConnection = connections.find(
+                          (conn) =>
+                            conn.sourceInstanceId ===
+                              connectionPopup.sourceInstanceId &&
+                            conn.sourceFieldName ===
+                              connectionPopup.sourceFieldName,
+                        );
+
+                        if (existingConnection) {
+                          removeConnection(existingConnection.id);
+                        }
+
+                        // Create the new connection
                         addConnection({
                           sourceInstanceId: connectionPopup.sourceInstanceId,
                           sourceFieldName: connectionPopup.sourceFieldName,
@@ -1631,14 +1883,22 @@ function FlowCanvas() {
                     <button
                       key={struct.name}
                       onClick={() => {
-                        // Create new instance at a position near the source
-                        const sourceInstance = instances.find(
-                          (i) => i.id === connectionPopup.sourceInstanceId,
-                        );
-                        const newPosition = {
-                          x: (sourceInstance?.position.x || 0) + 350,
-                          y: sourceInstance?.position.y || 0,
-                        };
+                        // Use the flow position where the user dropped the pointer
+                        const newPosition = connectionPopup.flowPosition
+                          ? {
+                              x:
+                                Math.round(
+                                  connectionPopup.flowPosition.x / 20,
+                                ) * 20,
+                              y:
+                                Math.round(
+                                  connectionPopup.flowPosition.y / 20,
+                                ) * 20,
+                            }
+                          : {
+                              x: 0,
+                              y: 0,
+                            };
 
                         // Create the instance with auto-naming (no prompt)
                         addInstance(struct, newPosition, undefined);
@@ -1650,7 +1910,20 @@ function FlowCanvas() {
                           const newInstance =
                             updatedInstances[updatedInstances.length - 1];
                           if (newInstance) {
-                            // Create the connection
+                            // Check if this pointer already has a connection and remove it
+                            const existingConnection = connections.find(
+                              (conn) =>
+                                conn.sourceInstanceId ===
+                                  connectionPopup.sourceInstanceId &&
+                                conn.sourceFieldName ===
+                                  connectionPopup.sourceFieldName,
+                            );
+
+                            if (existingConnection) {
+                              removeConnection(existingConnection.id);
+                            }
+
+                            // Create the new connection
                             addConnection({
                               sourceInstanceId:
                                 connectionPopup.sourceInstanceId,
@@ -1676,6 +1949,40 @@ function FlowCanvas() {
                     </button>
                   );
                 })}
+
+              {/* Show message if no compatible structs found */}
+              {structDefinitions.filter((struct) => {
+                const resolvedPointerType = resolveTypeName(
+                  connectionPopup.pointerType,
+                  structDefinitions,
+                );
+                const resolvedStructName = resolveTypeName(
+                  struct.name,
+                  structDefinitions,
+                );
+                const isCompatible =
+                  connectionPopup.pointerType === "void" ||
+                  resolvedPointerType === resolvedStructName ||
+                  struct.name === connectionPopup.pointerType ||
+                  struct.typedef === connectionPopup.pointerType;
+                return isCompatible;
+              }).length === 0 && (
+                <div className="px-3 py-4 text-center text-sm font-base text-gray-600 border-2 border-dashed border-gray-300 rounded-base mx-2">
+                  <p className="font-heading mb-1">
+                    No compatible struct found
+                  </p>
+                  <p className="text-xs">
+                    Pointer type:{" "}
+                    <span className="font-mono font-bold">
+                      {connectionPopup.pointerType}*
+                    </span>
+                  </p>
+                  <p className="text-xs mt-2 opacity-70">
+                    Define struct "{connectionPopup.pointerType}" first to
+                    create instances
+                  </p>
+                </div>
+              )}
 
               {/* Option to cancel */}
               <div className="border-t-2 border-black mt-2 pt-2">
