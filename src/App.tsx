@@ -1506,6 +1506,7 @@ function FlowCanvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         isValidConnection={isValidConnection}
+        deleteKeyCode={null}
         fitView
         className={`bg-gray-50 ${showSidebar ? "ml-64" : "ml-0"}`}
         elevateEdgesOnSelect={true}

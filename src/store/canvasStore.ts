@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { CStruct, StructInstance, PointerConnection } from "../types";
 import { canConnectPointer, resolveTypeName } from "../parser/structParser";
 
@@ -282,26 +282,58 @@ export const useCanvasStore = create<CanvasState>()(
       },
 
       removeInstance: (id) => {
-        get().saveHistory();
-        set((state) => ({
-          instances: state.instances.filter((inst) => inst.id !== id),
-          connections: state.connections.filter(
-            (conn) =>
-              conn.sourceInstanceId !== id && conn.targetInstanceId !== id,
-          ),
-        }));
+        set((state) => {
+          const newHistoryState: HistoryState = {
+            structDefinitions: JSON.parse(
+              JSON.stringify(state.structDefinitions),
+            ),
+            instances: JSON.parse(JSON.stringify(state.instances)),
+            connections: JSON.parse(JSON.stringify(state.connections)),
+          };
+          const newHistory = state.history.slice(0, state.historyIndex + 1);
+          newHistory.push(newHistoryState);
+          if (newHistory.length > MAX_HISTORY_SIZE) {
+            newHistory.shift();
+          }
+
+          return {
+            instances: state.instances.filter((inst) => inst.id !== id),
+            connections: state.connections.filter(
+              (conn) =>
+                conn.sourceInstanceId !== id && conn.targetInstanceId !== id,
+            ),
+            history: newHistory,
+            historyIndex: newHistory.length - 1,
+          };
+        });
       },
 
       removeInstances: (ids: string[]) => {
-        get().saveHistory();
-        set((state) => ({
-          instances: state.instances.filter((inst) => !ids.includes(inst.id)),
-          connections: state.connections.filter(
-            (conn) =>
-              !ids.includes(conn.sourceInstanceId) &&
-              !ids.includes(conn.targetInstanceId),
-          ),
-        }));
+        set((state) => {
+          const newHistoryState: HistoryState = {
+            structDefinitions: JSON.parse(
+              JSON.stringify(state.structDefinitions),
+            ),
+            instances: JSON.parse(JSON.stringify(state.instances)),
+            connections: JSON.parse(JSON.stringify(state.connections)),
+          };
+          const newHistory = state.history.slice(0, state.historyIndex + 1);
+          newHistory.push(newHistoryState);
+          if (newHistory.length > MAX_HISTORY_SIZE) {
+            newHistory.shift();
+          }
+
+          return {
+            instances: state.instances.filter((inst) => !ids.includes(inst.id)),
+            connections: state.connections.filter(
+              (conn) =>
+                !ids.includes(conn.sourceInstanceId) &&
+                !ids.includes(conn.targetInstanceId),
+            ),
+            history: newHistory,
+            historyIndex: newHistory.length - 1,
+          };
+        });
       },
 
       connections: [],
@@ -367,6 +399,7 @@ export const useCanvasStore = create<CanvasState>()(
     }),
     {
       name: "c-struct-visualizer-storage-v2",
+      storage: createJSONStorage(() => localStorage),
     },
   ),
 );
