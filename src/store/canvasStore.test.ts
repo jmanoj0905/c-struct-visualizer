@@ -27,7 +27,7 @@ describe('canvasStore persistence', () => {
 
   it('should persist state when deleting nodes', () => {
     const { addStructDefinition, addInstance, removeInstances } = useCanvasStore.getState();
-    const structDef: CStruct = { name: 'Node', fields: [], size: 0, alignment: 0 };
+    const structDef: CStruct = { name: 'Node', fields: [] };
     
     // Add a struct and two instances
     addStructDefinition(structDef);
@@ -54,7 +54,7 @@ describe('canvasStore persistence', () => {
 
   it('should persist state when clearing the workspace', () => {
     const { addStructDefinition, addInstance, clearAll } = useCanvasStore.getState();
-    const structDef: CStruct = { name: 'Node', fields: [], size: 0, alignment: 0 };
+    const structDef: CStruct = { name: 'Node', fields: [] };
     addStructDefinition(structDef);
     addInstance(structDef, { x: 0, y: 0 });
 
