@@ -36,7 +36,7 @@ import AlertContainer, { showAlert } from "./components/AlertContainer";
 
 import StructNode from "./components/StructNode";
 import StructEditor from "./components/StructEditor";
-import CustomEdge from "./components/CustomEdge";
+import SmartEdge from "./components/SmartEdge";
 import Sidebar from "./components/Sidebar";
 import Settings from "./components/Settings";
 import { Button } from "./components/ui/button";
@@ -59,7 +59,7 @@ const nodeTypes = {
 };
 
 const edgeTypes = {
-  custom: CustomEdge,
+  smartstep: SmartEdge,
 };
 
 function FlowCanvas() {
@@ -352,21 +352,7 @@ function FlowCanvas() {
   // Convert connections to React Flow edges with smart routing
   const reactFlowEdges: Edge[] = connections.map((conn) => {
     // Calculate if we need vertical or horizontal offset based on node positions
-    const sourceNode = instances.find((i) => i.id === conn.sourceInstanceId);
-    const targetNode = instances.find((i) => i.id === conn.targetInstanceId);
-
-    let offset = 50;
-    if (sourceNode && targetNode) {
-      // Increase offset if nodes are close vertically but far horizontally
-      const deltaX = Math.abs(targetNode.position.x - sourceNode.position.x);
-      const deltaY = Math.abs(targetNode.position.y - sourceNode.position.y);
-
-      if (deltaY < 200 && deltaX > 300) {
-        offset = 80; // More aggressive curve for horizontal connections
-      } else if (deltaY > 300) {
-        offset = 30; // Less curve for vertical connections
-      }
-    }
+    // Removed unused sourceNode and targetNode variables
 
     // Check if this edge is part of highlighted path
     const isHighlighted =
@@ -379,8 +365,7 @@ function FlowCanvas() {
       source: conn.sourceInstanceId,
       sourceHandle: `${conn.sourceInstanceId}-${conn.sourceFieldName}`,
       target: conn.targetInstanceId,
-      targetHandle: `target-${conn.targetInstanceId}`,
-      type: "custom",
+      type: "smartstep",
       animated: isHighlighted,
       style: {
         stroke: isHighlighted ? "#3b82f6" : "#374151",
@@ -396,7 +381,6 @@ function FlowCanvas() {
         height: 16,
       },
       data: { connectionId: conn.id },
-      pathOptions: { offset, borderRadius: 50 },
       zIndex: isHighlighted ? 2000 : 1000,
     };
   });
@@ -1513,7 +1497,7 @@ function FlowCanvas() {
         snapToGrid={snapToGrid}
         snapGrid={[20, 20]}
         defaultEdgeOptions={{
-          type: "custom",
+          type: "smartstep",
         }}
         connectionMode={ConnectionMode.Loose}
         selectionMode={SelectionMode.Partial}
