@@ -315,24 +315,6 @@ Contributions are welcome! Please see our contributing guidelines:
 - Improved auto-layout and validation
 - Enhanced visual feedback and animations
 
-## Future Features
-
-We're constantly improving C Struct Visualizer! Here are some planned enhancements:
-
-### Workspace Tabs/Projects
-**Problem:** Can only work on one diagram at a time
-
-**Planned Solution:**
-- Save multiple named workspaces/projects
-- Quick switch between different diagrams
-- "Recent workspaces" list for easy access
-- Tab-based interface for managing multiple projects simultaneously
-- Per-workspace settings and configurations
-
-This feature will allow users to manage multiple struct diagrams (e.g., one for each data structure assignment, or different versions of the same project) without having to constantly import/export workspaces.
-
-**Want this feature?** Let us know by opening an issue or giving it a thumbs up!
-
 ## Reporting Issues
 
 When reporting bugs, include:
