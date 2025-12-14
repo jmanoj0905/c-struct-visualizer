@@ -107,9 +107,8 @@ const Settings = ({
                 <h3 className="text-sm font-heading tracking-tight mb-3">
                   CANVAS OPTIONS
                 </h3>
-                <button
-                  onClick={() => onSnapToGridChange(!snapToGrid)}
-                  className={`w-full px-4 py-3 rounded-base border-2 border-black transition flex items-center justify-between shadow-shadow hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none`}
+                <div
+                  className="w-full px-4 py-3 rounded-base border-2 border-black flex items-center justify-between"
                   style={{
                     backgroundColor: snapToGrid
                       ? UI_COLORS.green
@@ -120,19 +119,20 @@ const Settings = ({
                     <Grid3x3 size={20} strokeWidth={2.5} />
                     <span className="text-sm font-heading">Snap to Grid</span>
                   </div>
-                  <div
-                    className={`w-12 h-6 rounded-full border-2 border-black relative transition-colors`}
+                  <button
+                    onClick={() => onSnapToGridChange(!snapToGrid)}
+                    className={`w-12 h-6 rounded-full border-2 border-black relative transition-all focus:outline-none hover:scale-105`}
                     style={{
                       backgroundColor: snapToGrid ? "#4ade80" : "#9ca3af",
                     }}
                   >
                     <div
-                      className={`absolute top-0.5 w-5 h-5 rounded-full bg-white border-2 border-black transition-transform ${
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white border-2 border-black transition-transform ${
                         snapToGrid ? "translate-x-6" : "translate-x-0.5"
                       }`}
                     />
-                  </div>
-                </button>
+                  </button>
+                </div>
               </div>
 
               {/* How to Use Button */}
@@ -175,7 +175,7 @@ const Settings = ({
 
               {/* Version */}
               <div className="text-center">
-                <div className="text-xs font-heading opacity-50">v1.0.0</div>
+                <div className="text-xs font-heading opacity-50">v1.2.0</div>
               </div>
             </>
           )}

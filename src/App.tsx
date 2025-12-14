@@ -18,7 +18,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   Plus,
-  Sparkles,
+  LayoutGrid,
   Trash2,
   Settings as SettingsIcon,
   ChevronLeft,
@@ -1050,16 +1050,16 @@ function FlowCanvas() {
           layoutOptions: {
             "elk.algorithm": "layered",
             "elk.direction": "RIGHT",
-            "elk.spacing.nodeNode": "250",
-            "elk.layered.spacing.nodeNodeBetweenLayers": "450",
-            "elk.padding": "[120,120,120,120]",
+            "elk.spacing.nodeNode": "80",
+            "elk.layered.spacing.nodeNodeBetweenLayers": "150",
+            "elk.padding": "[50,50,50,50]",
             "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
             "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
             "elk.considerModelOrder.strategy": "PREFER_EDGES",
-            "elk.spacing.edgeNode": "150",
-            "elk.spacing.edgeEdge": "80",
-            "elk.layered.spacing.edgeNodeBetweenLayers": "150",
-            "elk.layered.spacing.baseValue": "180",
+            "elk.spacing.edgeNode": "60",
+            "elk.spacing.edgeEdge": "40",
+            "elk.layered.spacing.edgeNodeBetweenLayers": "60",
+            "elk.layered.spacing.baseValue": "80",
             "elk.separateConnectedComponents": "true",
           },
           children: acyclicInstances.map((instance) => {
@@ -1112,16 +1112,16 @@ function FlowCanvas() {
       // Combine and apply circular layouts
       if (circularLayouts.length > 0) {
         const combined = combineLayouts(circularLayouts, {
-          horizontalGap: 500,
-          verticalGap: 400,
+          horizontalGap: 150,
+          verticalGap: 100,
         });
 
         // Position circular layouts below acyclic layout
-        const circularStartY = maxY + 400;
+        const circularStartY = maxY + 150;
 
         combined.positions.forEach((pos, id) => {
           updateInstancePosition(id, {
-            x: pos.x + 120,
+            x: pos.x + 50,
             y: pos.y + circularStartY,
           });
         });
@@ -1131,11 +1131,11 @@ function FlowCanvas() {
 
       // Layout orphaned nodes below in a grid
       if (orphanedInstances.length > 0) {
-        const orphanStartY = maxY + 400;
-        const orphanStartX = 120;
-        const spacing = 500;
-        const rowSpacing = 450;
-        const nodesPerRow = 3;
+        const orphanStartY = maxY + 150;
+        const orphanStartX = 50;
+        const spacing = 450;
+        const rowSpacing = 150;
+        const nodesPerRow = 4;
 
         orphanedInstances.forEach((instance, index) => {
           const row = Math.floor(index / nodesPerRow);
@@ -1152,7 +1152,7 @@ function FlowCanvas() {
 
           updateInstancePosition(instance.id, {
             x: orphanStartX + col * spacing,
-            y: orphanStartY + row * (rowSpacing + (nodeHeight - 200)),
+            y: orphanStartY + row * (rowSpacing + nodeHeight),
           });
         });
       }
@@ -1213,10 +1213,9 @@ function FlowCanvas() {
     <div ref={reactFlowWrapper} className="w-screen h-screen bg-gray-50">
       <AlertContainer />
       {/* Sidebar Toggle Button - On the edge of sidebar */}
-      <Button
-        size="icon"
+      <button
         onClick={() => setShowSidebar(!showSidebar)}
-        className={`fixed top-1/2 -translate-y-1/2 z-30 transition-all py-3 px-1.5 h-16 w-8 rounded-l-none ${
+        className={`fixed top-1/2 -translate-y-1/2 z-30 transition-all duration-500 ease-in-out py-3 px-1.5 h-16 w-8 rounded-l-none border-2 border-l-0 border-black ${
           showSidebar ? "left-64" : "left-0"
         }`}
         style={{ backgroundColor: UI_COLORS.cyan }}
@@ -1227,10 +1226,14 @@ function FlowCanvas() {
         ) : (
           <ChevronRight size={16} strokeWidth={2.5} />
         )}
-      </Button>
+      </button>
 
       {/* Sidebar */}
-      {showSidebar && (
+      <div
+        className={`fixed top-0 left-0 h-full z-20 transition-transform duration-500 ease-in-out ${
+          showSidebar ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <Sidebar
           onEditStruct={(structName) => {
             setEditingStructName(structName);
@@ -1243,7 +1246,7 @@ function FlowCanvas() {
             setShowEditor(true);
           }}
         />
-      )}
+      </div>
 
       <ReactFlow
         nodes={nodes}
@@ -1388,7 +1391,7 @@ function FlowCanvas() {
         {/* Fit to window button */}
         <Button
           size="icon"
-          onClick={() => fitView({ padding: 0.2, duration: 300 })}
+          onClick={() => fitView({ padding: 0.3, duration: 300, maxZoom: 0.9 })}
           style={{ backgroundColor: UI_COLORS.cyan }}
           title="Fit to window"
         >
@@ -1400,9 +1403,9 @@ function FlowCanvas() {
           size="icon"
           onClick={handleCleanupLayout}
           style={{ backgroundColor: UI_COLORS.indigo }}
-          title="Clean up layout"
+          title="Auto arrange layout"
         >
-          <Sparkles size={22} strokeWidth={2.5} />
+          <LayoutGrid size={22} strokeWidth={2.5} />
         </Button>
       </div>
 
@@ -1695,7 +1698,7 @@ function FlowCanvas() {
 
           {/* Menu */}
           <div
-            className="fixed z-30 bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black py-2 min-w-[180px]"
+            className="fixed z-30 bg-white rounded-base border-2 border-black shadow-shadow min-w-[200px] overflow-hidden"
             style={{
               left: contextMenu.x,
               top: contextMenu.y,
@@ -1726,7 +1729,7 @@ function FlowCanvas() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#FFF59D] transition"
+                  className="w-full text-left px-4 py-3 text-sm font-heading border-b-2 border-black hover:bg-main hover:text-white transition-colors"
                 >
                   Highlight Path
                 </button>
@@ -1740,7 +1743,7 @@ function FlowCanvas() {
                       duration: 2000,
                     });
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#FFF59D] transition"
+                  className="w-full text-left px-4 py-3 text-sm font-heading border-b-2 border-black hover:bg-main hover:text-white transition-colors"
                 >
                   Copy Node
                 </button>
@@ -1772,11 +1775,10 @@ function FlowCanvas() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#FFF59D] transition"
+                  className="w-full text-left px-4 py-3 text-sm font-heading border-b-2 border-black hover:bg-main hover:text-white transition-colors"
                 >
                   Duplicate Node
                 </button>
-                <div className="border-t-2 border-black my-2" />
                 <button
                   onClick={() => {
                     const nodeId = contextMenu.nodeId!;
@@ -1797,7 +1799,7 @@ function FlowCanvas() {
                       cancelText: "Cancel",
                     });
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold text-red-600 hover:bg-[#EF9A9A] hover:text-black transition"
+                  className="w-full text-left px-4 py-3 text-sm font-heading text-red-600 hover:bg-red-100 transition-colors"
                 >
                   Delete Node
                 </button>
@@ -1826,7 +1828,7 @@ function FlowCanvas() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#A5D6A7] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full text-left px-4 py-3 text-sm font-heading border-b-2 border-black hover:bg-main hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
                   disabled={copiedNodes.length === 0}
                 >
                   Paste Node{copiedNodes.length > 1 ? "s" : ""}
@@ -1836,18 +1838,17 @@ function FlowCanvas() {
                     setHighlightedPath(new Set());
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#A5D6A7] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full text-left px-4 py-3 text-sm font-heading border-b-2 border-black hover:bg-main hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
                   disabled={highlightedPath.size === 0}
                 >
                   Clear Highlights
                 </button>
-                <div className="border-t-2 border-black my-2" />
                 <button
                   onClick={() => {
                     handleCleanupLayout();
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-[#B39DDB] transition"
+                  className="w-full text-left px-4 py-3 text-sm font-heading hover:bg-main hover:text-white transition-colors"
                 >
                   Auto Layout
                 </button>
@@ -1868,16 +1869,16 @@ function FlowCanvas() {
 
           {/* Menu */}
           <div
-            className="fixed z-30 bg-white rounded-none shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] border-4 border-black p-3 min-w-[220px]"
+            className="fixed z-30 bg-white rounded-base border-2 border-black shadow-shadow min-w-[240px] overflow-hidden"
             style={{
               left: quickAddMenu.x,
               top: quickAddMenu.y,
             }}
           >
-            <div className="text-sm font-bold text-black mb-2 pb-2 border-b-2 border-black">
+            <div className="px-4 py-3 font-heading text-sm border-b-2 border-black bg-main text-white">
               Add Node
             </div>
-            <div className="space-y-1 max-h-[300px] overflow-y-auto">
+            <div className="max-h-[320px] overflow-y-auto">
               {structDefinitions.map((struct) => (
                 <button
                   key={struct.name}
@@ -1889,20 +1890,20 @@ function FlowCanvas() {
                     addInstance(struct, position, undefined);
                     setQuickAddMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm font-mono font-bold hover:bg-[#90CAF9] rounded-none transition border-2 border-transparent hover:border-black"
+                  className="w-full text-left px-4 py-3 text-sm font-mono border-b-2 border-black hover:bg-main hover:text-white transition-colors"
                 >
                   {struct.name}
                 </button>
               ))}
 
               {structDefinitions.length === 0 && (
-                <div className="text-center text-gray-500 text-sm font-bold py-4">
+                <div className="text-center text-gray-500 text-sm font-base py-6">
                   No structs defined
                 </div>
               )}
             </div>
 
-            <div className="border-t-2 border-black mt-2 pt-2">
+            <div className="p-2 border-t-2 border-black bg-gray-50">
               <Button
                 onClick={() => {
                   setQuickAddMenu(null);
