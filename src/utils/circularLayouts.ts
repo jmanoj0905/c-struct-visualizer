@@ -60,8 +60,8 @@ export function layoutSelfLoop(
     return createEmptyLayout();
   }
 
-  // Keep node at its current position or use center
-  const position = instance.position || { x: centerX, y: centerY };
+  // Always use calculated center position for consistent layout
+  const position = { x: centerX, y: centerY };
 
   // Find the self-loop connection
   const selfLoopConnection = connections.find(
@@ -127,14 +127,14 @@ export function layoutDoublyLinked(
     return createEmptyLayout();
   }
 
-  // Position nodes horizontally with increased spacing for clearer edge routing
+  // Position nodes horizontally with spacing for clearer edge routing
   // Left node's right side connects to right node's left side
-  const horizontalSpacing = 500; // Increased spacing for better visibility
-  const pos1 = instance1.position || {
+  const horizontalSpacing = 500;
+  const pos1 = {
     x: centerX - horizontalSpacing / 2,
     y: centerY,
   };
-  const pos2 = instance2.position || {
+  const pos2 = {
     x: centerX + horizontalSpacing / 2,
     y: centerY,
   };

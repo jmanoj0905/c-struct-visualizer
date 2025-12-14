@@ -979,21 +979,22 @@ function FlowCanvas() {
       const circularLayouts: LayoutResult[] = [];
 
       // Layout each SCC with appropriate circular layout
+      // Always use consistent center positions (0, 0) so layout is deterministic
       for (const scc of graphMetrics.sccs) {
         let layout: LayoutResult;
 
         switch (scc.pattern) {
           case CircularPattern.SELF_LOOP:
-            layout = layoutSelfLoop(scc, instances, connections);
+            layout = layoutSelfLoop(scc, instances, connections, 0, 0);
             break;
           case CircularPattern.BIDIRECTIONAL:
-            layout = layoutDoublyLinked(scc, instances, connections);
+            layout = layoutDoublyLinked(scc, instances, connections, 0, 0);
             break;
           case CircularPattern.CIRCULAR_LIST:
-            layout = layoutCircularList(scc, instances, connections);
+            layout = layoutCircularList(scc, instances, connections, 0, 0);
             break;
           case CircularPattern.GENERAL_CYCLE:
-            layout = layoutGeneralCycle(scc, instances, connections);
+            layout = layoutGeneralCycle(scc, instances, connections, 0, 0);
             break;
           default:
             continue;
