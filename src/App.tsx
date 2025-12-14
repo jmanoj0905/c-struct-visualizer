@@ -975,7 +975,7 @@ function FlowCanvas() {
     );
 
     try {
-      let maxY = 100;
+      let maxY = 0;
       const circularLayouts: LayoutResult[] = [];
 
       // Layout each SCC with appropriate circular layout
@@ -1117,7 +1117,7 @@ function FlowCanvas() {
         });
 
         // Position circular layouts below acyclic layout
-        const circularStartY = maxY + 150;
+        const circularStartY = acyclicInstances.length > 0 ? maxY + 150 : 50;
 
         combined.positions.forEach((pos, id) => {
           updateInstancePosition(id, {
@@ -1131,7 +1131,10 @@ function FlowCanvas() {
 
       // Layout orphaned nodes below in a grid
       if (orphanedInstances.length > 0) {
-        const orphanStartY = maxY + 150;
+        const orphanStartY =
+          circularLayouts.length > 0 || acyclicInstances.length > 0
+            ? maxY + 150
+            : 50;
         const orphanStartX = 50;
         const spacing = 450;
         const rowSpacing = 150;
