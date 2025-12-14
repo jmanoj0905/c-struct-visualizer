@@ -1,6 +1,5 @@
 import {
   Edit2,
-  Download,
   FileCode,
   GripVertical,
   X,
@@ -14,10 +13,7 @@ import {
   FileImage,
   FileType,
   Copy,
-  Box,
   Layers,
-  Users,
-  Database,
 } from "lucide-react";
 import { useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";

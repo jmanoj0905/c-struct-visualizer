@@ -25,6 +25,23 @@ interface ThemedAlertProps {
 function ThemedAlert({ alert, onClose, isLatest }: ThemedAlertProps) {
   const [isExiting, setIsExiting] = useState(false);
 
+  const handleClose = () => {
+    setIsExiting(true);
+    setTimeout(() => {
+      onClose(alert.id);
+    }, 200);
+  };
+
+  const handleConfirm = () => {
+    alert.onConfirm?.();
+    handleClose();
+  };
+
+  const handleCancel = () => {
+    alert.onCancel?.();
+    handleClose();
+  };
+
   useEffect(() => {
     if (alert.type !== "confirm" && alert.duration !== Infinity) {
       const timer = setTimeout(() => {
@@ -54,23 +71,6 @@ function ThemedAlert({ alert, onClose, isLatest }: ThemedAlertProps) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [alert.type, isLatest]);
-
-  const handleClose = () => {
-    setIsExiting(true);
-    setTimeout(() => {
-      onClose(alert.id);
-    }, 200);
-  };
-
-  const handleConfirm = () => {
-    alert.onConfirm?.();
-    handleClose();
-  };
-
-  const handleCancel = () => {
-    alert.onCancel?.();
-    handleClose();
-  };
 
   const getAlertStyles = () => {
     switch (alert.type) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   FileCode,
   X,
@@ -13,7 +13,6 @@ import { useCanvasStore } from "../store/canvasStore";
 import {
   parseStruct,
   validateStructCode,
-  type ValidationError,
   canConnectPointer,
   resolveTypeName,
 } from "../parser/structParser";
@@ -76,19 +75,15 @@ ${existingStruct.fields
   const [code, setCode] = useState(defaultCode);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<ValidationError[]>(
-    [],
-  );
 
-  // Real-time validation
-  useEffect(() => {
-    const errors = validateStructCode(
+  // Real-time validation using useMemo instead of setState in effect
+  const validationErrors = useMemo(() => {
+    return validateStructCode(
       code,
       structDefinitions,
       !!editStructName,
       editStructName,
     );
-    setValidationErrors(errors);
   }, [code, structDefinitions, editStructName]);
 
   const handleDelete = () => {

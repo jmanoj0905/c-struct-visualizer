@@ -7,7 +7,7 @@ An interactive, beginner-friendly visual tool for learning C structs, pointers, 
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
 
-**[Try it live!](https://structviz.pages.dev/)**
+**🌐 [Try it live!](https://structviz.pages.dev/) 🌐**
 
 ## Features
 
