@@ -1219,17 +1219,21 @@ function FlowCanvas() {
       {/* Sidebar Toggle Button - On the edge of sidebar */}
       <button
         onClick={() => setShowSidebar(!showSidebar)}
-        className={`fixed top-1/2 -translate-y-1/2 z-30 transition-all duration-500 ease-in-out py-3 px-1.5 h-16 w-8 rounded-l-none border-2 border-l-0 border-black ${
+        className={`fixed top-1/2 -translate-y-1/2 z-30 transition-all duration-500 ease-in-out py-3 px-1.5 h-16 w-8 rounded-md rounded-l-none border-2 border-l-0 border-black ${
           showSidebar ? "left-64" : "left-0"
         }`}
         style={{ backgroundColor: UI_COLORS.cyan }}
         title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
       >
-        {showSidebar ? (
-          <ChevronLeft size={16} strokeWidth={2.5} />
-        ) : (
-          <ChevronRight size={16} strokeWidth={2.5} />
-        )}
+        <div
+          className={`transition-transform duration-200 ${showSidebar ? "" : "scale-110"}`}
+        >
+          {showSidebar ? (
+            <ChevronLeft size={16} strokeWidth={2.5} />
+          ) : (
+            <ChevronRight size={16} strokeWidth={2.5} />
+          )}
+        </div>
       </button>
 
       {/* Sidebar */}

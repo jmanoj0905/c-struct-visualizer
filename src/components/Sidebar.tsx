@@ -302,7 +302,7 @@ const Sidebar = ({
   };
 
   return (
-    <div className="fixed left-0 top-0 h-screen w-64 bg-white border-r-4 border-black z-20 flex flex-col">
+    <div className="h-screen w-64 bg-white border-r-4 border-black flex flex-col">
       {/* Header */}
       <div
         className="p-4 border-b-4 border-black"
