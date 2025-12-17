@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm install)",
+      "WebFetch(domain:reactflow.dev)",
+      "WebFetch(domain:www.neobrutalism.dev)",
+      "Bash(npm run build:check:*)",
+      "Bash(npm run)",
+      "Bash(cat:*)"
+    ]
+  },
+  "outputStyle": "default"
+}

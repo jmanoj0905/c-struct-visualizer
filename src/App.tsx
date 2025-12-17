@@ -13,54 +13,36 @@ import {
   useReactFlow,
   ConnectionMode,
   SelectionMode,
-  Panel,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
   Plus,
-  Wand2,
-  Trash2,
-  Settings as SettingsIcon,
   ChevronLeft,
   ChevronRight,
-  Hand,
-  MousePointer,
-  Undo,
-  Redo,
-  Maximize2,
 } from "lucide-react";
 import { toPng, toSvg } from "html-to-image";
 import jsPDF from "jspdf";
-import ELK from "elkjs/lib/elk.bundled.js";
 import AlertContainer, { showAlert } from "./components/AlertContainer";
 
 import StructNode from "./components/StructNode";
 import StructEditor from "./components/StructEditor";
-import CustomEdge from "./components/CustomEdge";
 import Sidebar from "./components/Sidebar";
 import Settings from "./components/Settings";
+import Dock from "./components/Dock";
+import HamburgerMenu from "./components/HamburgerMenu";
+import TemplateManager from "./components/TemplateManager";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useCanvasStore } from "./store/canvasStore";
 import { canConnectPointer, resolveTypeName } from "./parser/structParser";
 import { UI_COLORS } from "./utils/colors";
-import { analyzeGraph, CircularPattern } from "./utils/graphAnalysis";
-import {
-  layoutSelfLoop,
-  layoutDoublyLinked,
-  layoutCircularList,
-  layoutGeneralCycle,
-  combineLayouts,
-  type LayoutResult,
-} from "./utils/circularLayouts";
+import { performSmartLayout } from "./utils/smartLayout";
 
 const nodeTypes = {
   structNode: StructNode,
 };
 
-const edgeTypes = {
-  custom: CustomEdge,
-};
+// Edge types removed - using default smoothstep for all connections
 
 function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -88,6 +70,7 @@ function FlowCanvas() {
     string | undefined
   >(undefined);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(() => {
     const saved = localStorage.getItem("snap-to-grid");
@@ -286,6 +269,47 @@ function FlowCanvas() {
       });
   }, [getViewportElement]);
 
+  // Save workspace to JSON file
+  const handleSaveWorkspace = useCallback(() => {
+    const data = useCanvasStore.getState().exportWorkspace();
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `c-struct-workspace-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showAlert({
+      type: "success",
+      message: "Workspace saved successfully",
+      duration: 2000,
+    });
+  }, []);
+
+  // Load workspace from JSON file
+  const handleLoadWorkspace = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const data = event.target?.result as string;
+          useCanvasStore.getState().importWorkspace(data);
+          showAlert({
+            type: "success",
+            message: "Workspace loaded successfully",
+            duration: 2000,
+          });
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
+  }, []);
+
   // Convert instances to React Flow nodes
   const reactFlowNodes: Node[] = instances.map((instance) => {
     const structDef = structDefinitions.find(
@@ -349,25 +373,8 @@ function FlowCanvas() {
     [connections],
   );
 
-  // Convert connections to React Flow edges with smart routing
+  // Convert connections to React Flow edges
   const reactFlowEdges: Edge[] = connections.map((conn) => {
-    // Calculate if we need vertical or horizontal offset based on node positions
-    const sourceNode = instances.find((i) => i.id === conn.sourceInstanceId);
-    const targetNode = instances.find((i) => i.id === conn.targetInstanceId);
-
-    let offset = 50;
-    if (sourceNode && targetNode) {
-      // Increase offset if nodes are close vertically but far horizontally
-      const deltaX = Math.abs(targetNode.position.x - sourceNode.position.x);
-      const deltaY = Math.abs(targetNode.position.y - sourceNode.position.y);
-
-      if (deltaY < 200 && deltaX > 300) {
-        offset = 80; // More aggressive curve for horizontal connections
-      } else if (deltaY > 300) {
-        offset = 30; // Less curve for vertical connections
-      }
-    }
-
     // Check if this edge is part of highlighted path
     const isHighlighted =
       highlightedPath.size > 0 &&
@@ -379,8 +386,7 @@ function FlowCanvas() {
       source: conn.sourceInstanceId,
       sourceHandle: `${conn.sourceInstanceId}-${conn.sourceFieldName}`,
       target: conn.targetInstanceId,
-      targetHandle: `target-${conn.targetInstanceId}`,
-      type: "custom",
+      type: "smoothstep",
       animated: isHighlighted,
       style: {
         stroke: isHighlighted ? "#3b82f6" : "#374151",
@@ -396,7 +402,6 @@ function FlowCanvas() {
         height: 16,
       },
       data: { connectionId: conn.id },
-      pathOptions: { offset, borderRadius: 50 },
       zIndex: isHighlighted ? 2000 : 1000,
     };
   });
@@ -936,7 +941,10 @@ function FlowCanvas() {
 
       // SMART CONNECTION: If user dropped on the main target handle (not a specific field handle),
       // try to find the first compatible pointer target field in the target struct
-      if (connection.targetHandle === `target-${connection.target}`) {
+      if (
+        connection.targetHandle?.startsWith("target-") &&
+        connection.targetHandle?.endsWith(`-${connection.target}`)
+      ) {
         // Get target struct definition
         const targetStruct = structDefinitions.find(
           (s) => s.name === targetInstance.structName,
@@ -1097,298 +1105,24 @@ function FlowCanvas() {
     [instances, structDefinitions, screenToFlowPosition],
   );
 
-  // Auto-layout using ELK.js algorithm with support for orphaned nodes
+  // Smart auto-layout system that detects patterns and applies appropriate layouts
   const handleCleanupLayout = useCallback(async () => {
     if (instances.length === 0) return;
 
-    const elk = new ELK();
-
-    // Analyze graph for circular structures
-    const graphMetrics = analyzeGraph(instances, connections);
-
-    // Separate nodes into: SCCs (circular), acyclic connected, and orphaned
-    const sccNodeIds = new Set<string>();
-    graphMetrics.sccs.forEach((scc) => {
-      scc.ids.forEach((id) => sccNodeIds.add(id));
-    });
-
-    const connectedNodeIds = new Set<string>();
-    connections.forEach((conn) => {
-      connectedNodeIds.add(conn.sourceInstanceId);
-      connectedNodeIds.add(conn.targetInstanceId);
-    });
-
-    const acyclicInstances = instances.filter(
-      (inst) => connectedNodeIds.has(inst.id) && !sccNodeIds.has(inst.id),
-    );
-    const orphanedInstances = instances.filter(
-      (inst) => !connectedNodeIds.has(inst.id),
-    );
-
-    // Find separate connected components in acyclic nodes using Union-Find
-    const findConnectedComponents = (
-      nodes: typeof acyclicInstances,
-      edges: typeof connections,
-    ): string[][] => {
-      const parent = new Map<string, string>();
-      const rank = new Map<string, number>();
-
-      nodes.forEach((node) => {
-        parent.set(node.id, node.id);
-        rank.set(node.id, 0);
-      });
-
-      const find = (id: string): string => {
-        if (parent.get(id) !== id) {
-          parent.set(id, find(parent.get(id)!));
-        }
-        return parent.get(id)!;
-      };
-
-      const union = (id1: string, id2: string) => {
-        const root1 = find(id1);
-        const root2 = find(id2);
-        if (root1 === root2) return;
-
-        const rank1 = rank.get(root1) || 0;
-        const rank2 = rank.get(root2) || 0;
-
-        if (rank1 < rank2) {
-          parent.set(root1, root2);
-        } else if (rank1 > rank2) {
-          parent.set(root2, root1);
-        } else {
-          parent.set(root2, root1);
-          rank.set(root1, rank1 + 1);
-        }
-      };
-
-      edges.forEach((edge) => {
-        if (
-          parent.has(edge.sourceInstanceId) &&
-          parent.has(edge.targetInstanceId)
-        ) {
-          union(edge.sourceInstanceId, edge.targetInstanceId);
-        }
-      });
-
-      const components = new Map<string, string[]>();
-      nodes.forEach((node) => {
-        const root = find(node.id);
-        if (!components.has(root)) {
-          components.set(root, []);
-        }
-        components.get(root)!.push(node.id);
-      });
-
-      return Array.from(components.values());
-    };
-
-    const acyclicComponents = findConnectedComponents(
-      acyclicInstances,
-      connections,
-    );
-
     try {
-      let maxY = 0;
-      const circularLayouts: LayoutResult[] = [];
-
-      // Layout each SCC with appropriate circular layout
-      // Always use consistent center positions (0, 0) so layout is deterministic
-      for (const scc of graphMetrics.sccs) {
-        let layout: LayoutResult;
-
-        switch (scc.pattern) {
-          case CircularPattern.SELF_LOOP:
-            layout = layoutSelfLoop(scc, instances, connections, 0, 0);
-            break;
-          case CircularPattern.BIDIRECTIONAL:
-            layout = layoutDoublyLinked(scc, instances, connections, 0, 0);
-            break;
-          case CircularPattern.CIRCULAR_LIST:
-            layout = layoutCircularList(scc, instances, connections, 0, 0);
-            break;
-          case CircularPattern.GENERAL_CYCLE:
-            layout = layoutGeneralCycle(scc, instances, connections, 0, 0);
-            break;
-          default:
-            continue;
-        }
-
-        circularLayouts.push(layout);
-      }
-
-      // Layout each acyclic component separately with ELK
-      let componentOffsetX = 50;
-      for (const componentIds of acyclicComponents) {
-        if (componentIds.length === 0) continue;
-
-        const componentInstances = instances.filter((inst) =>
-          componentIds.includes(inst.id),
-        );
-        // Helper to get field order for priority calculation
-        const getFieldIndex = (
-          instanceId: string,
-          fieldName: string,
-        ): number => {
-          const instance = instances.find((i) => i.id === instanceId);
-          if (!instance) return 0;
-
-          const struct = structDefinitions.find(
-            (s) => s.name === instance.structName,
-          );
-          if (!struct) return 0;
-
-          // Extract base field name (handle array notation like "id[0]")
-          const baseFieldName = fieldName.split("[")[0];
-
-          // Find field index in struct definition
-          const fieldIndex = struct.fields.findIndex(
-            (f) => f.name === baseFieldName,
-          );
-
-          // For array fields, add the array index to maintain order
-          if (fieldName.includes("[")) {
-            const arrayIndex = parseInt(
-              fieldName.match(/\[(\d+)\]/)?.[1] || "0",
-              10,
-            );
-            return fieldIndex * 1000 + arrayIndex;
-          }
-
-          return fieldIndex * 1000;
-        };
-
-        // Only edges within this component
-        const componentNodeSet = new Set(componentIds);
-        const componentConnections = connections.filter(
-          (c) =>
-            componentNodeSet.has(c.sourceInstanceId) &&
-            componentNodeSet.has(c.targetInstanceId),
-        );
-
-        const elkGraph = {
-          id: "root",
-          layoutOptions: {
-            "elk.algorithm": "layered",
-            "elk.direction": "RIGHT",
-            "elk.spacing.nodeNode": "80",
-            "elk.layered.spacing.nodeNodeBetweenLayers": "150",
-            "elk.padding": "[50,50,50,50]",
-            "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-            "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-            "elk.considerModelOrder.strategy": "PREFER_EDGES",
-            "elk.spacing.edgeNode": "60",
-            "elk.spacing.edgeEdge": "40",
-            "elk.layered.spacing.edgeNodeBetweenLayers": "60",
-            "elk.layered.spacing.baseValue": "80",
-            "elk.separateConnectedComponents": "false",
-          },
-          children: componentInstances.map((instance) => {
-            const struct = structDefinitions.find(
-              (s) => s.name === instance.structName,
-            );
-            const fieldCount = struct?.fields.length || 0;
-            const baseHeight = 100;
-            const fieldHeight = 80;
-            const calculatedHeight = baseHeight + fieldCount * fieldHeight;
-
-            return {
-              id: instance.id,
-              width: 350,
-              height: Math.max(250, calculatedHeight),
-            };
-          }),
-          edges: componentConnections.map((conn, index) => {
-            const fieldOrder = getFieldIndex(
-              conn.sourceInstanceId,
-              conn.sourceFieldName,
-            );
-
-            return {
-              id: `edge-${index}`,
-              sources: [conn.sourceInstanceId],
-              targets: [conn.targetInstanceId],
-              layoutOptions: {
-                "elk.priority": String(fieldOrder),
-              },
-            };
-          }),
-        };
-
-        const layout = await elk.layout(elkGraph);
-
-        // Apply calculated positions for this component
-        let componentMaxX = 0;
-        layout.children?.forEach((node) => {
-          if (node.x !== undefined && node.y !== undefined) {
-            updateInstancePosition(node.id, {
-              x: node.x + componentOffsetX,
-              y: node.y + 50,
-            });
-            const nodeWidth = node.width || 350;
-            const nodeHeight = node.height || 200;
-            componentMaxX = Math.max(componentMaxX, node.x + nodeWidth);
-            maxY = Math.max(maxY, node.y + nodeHeight + 50);
-          }
-        });
-
-        // Update offset for next component (add gap between components)
-        componentOffsetX += componentMaxX + 200;
-      }
-
-      // Combine and apply circular layouts
-      if (circularLayouts.length > 0) {
-        const combined = combineLayouts(circularLayouts, {
-          horizontalGap: 150,
-          verticalGap: 100,
-        });
-
-        // Position circular layouts below acyclic components
-        const circularStartY = acyclicComponents.length > 0 ? maxY + 150 : 50;
-
-        combined.positions.forEach((pos, id) => {
-          updateInstancePosition(id, {
-            x: pos.x + 50,
-            y: pos.y + circularStartY,
-          });
-        });
-
-        maxY = circularStartY + combined.bounds.height;
-      }
-
-      // Layout orphaned nodes below in a grid
-      if (orphanedInstances.length > 0) {
-        const orphanStartY =
-          circularLayouts.length > 0 || acyclicComponents.length > 0
-            ? maxY + 150
-            : 50;
-        const orphanStartX = 50;
-        const spacing = 450;
-        const rowSpacing = 150;
-        const nodesPerRow = 4;
-
-        orphanedInstances.forEach((instance, index) => {
-          const row = Math.floor(index / nodesPerRow);
-          const col = index % nodesPerRow;
-
-          const struct = structDefinitions.find(
-            (s) => s.name === instance.structName,
-          );
-          const fieldCount = struct?.fields.length || 0;
-          const baseHeight = 80;
-          const fieldHeight = 60;
-          const calculatedHeight = baseHeight + fieldCount * fieldHeight;
-          const nodeHeight = Math.max(200, calculatedHeight);
-
-          updateInstancePosition(instance.id, {
-            x: orphanStartX + col * spacing,
-            y: orphanStartY + row * (rowSpacing + nodeHeight),
-          });
-        });
-      }
+      await performSmartLayout(
+        instances,
+        connections,
+        structDefinitions,
+        updateInstancePosition,
+      );
     } catch (error) {
-      console.error("Layout error:", error);
+      console.error("Smart layout error:", error);
+      showAlert({
+        type: "error",
+        message: "Failed to apply auto-layout. Please try again.",
+        duration: 3000,
+      });
     }
   }, [instances, connections, updateInstancePosition, structDefinitions]);
 
@@ -1474,10 +1208,6 @@ function FlowCanvas() {
             setEditingStructName(structName);
             setShowEditor(true);
           }}
-          onExportPNG={handleExportPNG}
-          onExportSVG={handleExportSVG}
-          onExportPDF={handleExportPDF}
-          onCopyToClipboard={handleCopyToClipboard}
           onAddInstance={handleAddInstanceFromSidebar}
           onDefineStruct={() => {
             setEditingStructName(undefined);
@@ -1504,7 +1234,6 @@ function FlowCanvas() {
         onDragOver={onDragOver}
         onDrop={onDrop}
         nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
         isValidConnection={isValidConnection}
         deleteKeyCode={null}
         fitView
@@ -1512,8 +1241,9 @@ function FlowCanvas() {
         elevateEdgesOnSelect={true}
         snapToGrid={snapToGrid}
         snapGrid={[20, 20]}
+        connectOnClick={true}
         defaultEdgeOptions={{
-          type: "custom",
+          type: "smoothstep",
         }}
         connectionMode={ConnectionMode.Loose}
         selectionMode={SelectionMode.Partial}
@@ -1530,123 +1260,60 @@ function FlowCanvas() {
           size={1}
           color="#d1d5db"
         />
-
-        {/* Selection Mode Toggle and Undo/Redo */}
-        <Panel position="bottom-left" className="flex gap-3">
-          <Button
-            size="icon"
-            onClick={() => setIsSelecting(!isSelecting)}
-            style={{
-              backgroundColor: isSelecting
-                ? UI_COLORS.indigo
-                : UI_COLORS.yellow,
-            }}
-            title={
-              isSelecting
-                ? "Switch to Pan Mode (Shift)"
-                : "Switch to Selection Mode (Shift)"
-            }
-          >
-            {isSelecting ? (
-              <MousePointer size={22} strokeWidth={2.5} />
-            ) : (
-              <Hand size={22} strokeWidth={2.5} />
-            )}
-          </Button>
-
-          <Button
-            size="icon"
-            onClick={() => {
-              undo();
-              showAlert({ type: "success", message: "Undo", duration: 1000 });
-            }}
-            disabled={historyIndex <= 0 || !history || history.length === 0}
-            style={{ backgroundColor: UI_COLORS.green }}
-            title="Undo (Ctrl/Cmd+Z)"
-          >
-            <Undo size={22} strokeWidth={2.5} />
-          </Button>
-
-          <Button
-            size="icon"
-            onClick={() => {
-              redo();
-              showAlert({ type: "success", message: "Redo", duration: 1000 });
-            }}
-            disabled={
-              !history ||
-              history.length === 0 ||
-              historyIndex >= history.length - 1
-            }
-            style={{ backgroundColor: UI_COLORS.orange }}
-            title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+U)"
-          >
-            <Redo size={22} strokeWidth={2.5} />
-          </Button>
-        </Panel>
       </ReactFlow>
 
-      {/* Top-right buttons */}
-      <div className="fixed top-4 right-4 flex gap-3 z-10">
-        {/* Auto arrange layout button */}
-        <Button
-          size="icon"
-          onClick={handleCleanupLayout}
-          style={{ backgroundColor: UI_COLORS.indigo }}
-          title="Auto arrange layout"
-        >
-          <Wand2 size={22} strokeWidth={2.5} />
-        </Button>
-
-        {/* Settings button */}
-        <Button
-          size="icon"
-          onClick={() => setShowSettings(true)}
-          style={{ backgroundColor: UI_COLORS.purple }}
-          title="Settings"
-        >
-          <SettingsIcon size={22} strokeWidth={2.5} />
-        </Button>
-
-        {/* Clear All button */}
-        <Button
-          size="icon"
-          onClick={() => {
-            showAlert({
-              type: "confirm",
-              message:
-                "Clear workspace? This will remove all instances and connections.",
-              onConfirm: () => {
-                clearAll();
-                showAlert({
-                  type: "success",
-                  message: "Workspace cleared",
-                  duration: 2000,
-                });
-              },
-              confirmText: "Clear",
-              cancelText: "Cancel",
-            });
-          }}
-          style={{ backgroundColor: UI_COLORS.red }}
-          title="Clear All"
-        >
-          <Trash2 size={22} strokeWidth={2.5} />
-        </Button>
+      {/* Hamburger Menu - Top Right */}
+      <div className="fixed top-4 right-4 z-10">
+        <HamburgerMenu
+          onOpenSettings={() => setShowSettings(true)}
+          onSaveWorkspace={handleSaveWorkspace}
+          onLoadWorkspace={handleLoadWorkspace}
+          onOpenTemplates={() => setShowTemplateManager(true)}
+          onExportPNG={handleExportPNG}
+          onExportSVG={handleExportSVG}
+          onExportPDF={handleExportPDF}
+          onCopyToClipboard={handleCopyToClipboard}
+        />
       </div>
 
-      {/* Bottom-right buttons */}
-      <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-10">
-        {/* Fit to window button */}
-        <Button
-          size="icon"
-          onClick={() => fitView({ padding: 0.3, duration: 300, maxZoom: 0.9 })}
-          style={{ backgroundColor: UI_COLORS.cyan }}
-          title="Fit to window"
-        >
-          <Maximize2 size={22} strokeWidth={2.5} />
-        </Button>
-      </div>
+      {/* Dock - Bottom Center */}
+      <Dock
+        isSelecting={isSelecting}
+        onToggleSelection={() => setIsSelecting(!isSelecting)}
+        onUndo={() => {
+          undo();
+          showAlert({ type: "success", message: "Undo", duration: 1000 });
+        }}
+        onRedo={() => {
+          redo();
+          showAlert({ type: "success", message: "Redo", duration: 1000 });
+        }}
+        onFitView={() => fitView({ padding: 0.3, duration: 300, maxZoom: 0.9 })}
+        onAutoLayout={handleCleanupLayout}
+        onClearWorkspace={() => {
+          showAlert({
+            type: "confirm",
+            message:
+              "Clear workspace? This will remove all instances and connections.",
+            onConfirm: () => {
+              clearAll();
+              showAlert({
+                type: "success",
+                message: "Workspace cleared",
+                duration: 2000,
+              });
+            },
+            confirmText: "Clear",
+            cancelText: "Cancel",
+          });
+        }}
+        undoDisabled={historyIndex <= 0 || !history || history.length === 0}
+        redoDisabled={
+          !history ||
+          history.length === 0 ||
+          historyIndex >= history.length - 1
+        }
+      />
 
       {showEditor && (
         <StructEditor
@@ -1663,6 +1330,14 @@ function FlowCanvas() {
           onClose={() => setShowSettings(false)}
           snapToGrid={snapToGrid}
           onSnapToGridChange={setSnapToGrid}
+        />
+      )}
+
+      {/* Template Manager */}
+      {showTemplateManager && (
+        <TemplateManager
+          isOpen={showTemplateManager}
+          onClose={() => setShowTemplateManager(false)}
         />
       )}
 

@@ -10,4 +10,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    port: 0,
+    strictPort: false,
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
+  },
 });

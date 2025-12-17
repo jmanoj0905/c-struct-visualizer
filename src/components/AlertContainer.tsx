@@ -23,7 +23,8 @@ function AlertContainer() {
         ...alert,
         id: `alert-${alertIdCounter++}`,
       };
-      setAlerts((prev) => [...prev, newAlert]);
+      // Prepend new alert to the beginning (latest on top) and limit to 5 alerts
+      setAlerts((prev) => [newAlert, ...prev].slice(0, 5));
     };
 
     return () => {
@@ -37,8 +38,8 @@ function AlertContainer() {
 
   return (
     <>
-      {/* Regular alerts (top-right) */}
-      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 pointer-events-none">
+      {/* Regular alerts (top-right) - latest on top */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none max-w-md">
         {alerts
           .filter((a) => a.type !== "confirm")
           .map((alert, index) => (
@@ -46,10 +47,7 @@ function AlertContainer() {
               <ThemedAlert
                 alert={alert}
                 onClose={removeAlert}
-                isLatest={
-                  index ===
-                  alerts.filter((a) => a.type !== "confirm").length - 1
-                }
+                isLatest={index === 0}
               />
             </div>
           ))}

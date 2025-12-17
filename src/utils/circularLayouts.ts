@@ -104,8 +104,8 @@ export function layoutSelfLoop(
 
 /**
  * Layout a bidirectional (doubly-linked) pattern (A ⇄ B)
- * Creates parallel curved edges with offset
- * Nodes are positioned horizontally with adequate spacing for clean edge routing
+ * Positions nodes vertically (one above the other) to prevent edge overlap
+ * This ensures forward and backward edges flow cleanly without crossing nodes
  */
 export function layoutDoublyLinked(
   scc: InstanceGroup,
@@ -127,16 +127,16 @@ export function layoutDoublyLinked(
     return createEmptyLayout();
   }
 
-  // Position nodes horizontally with spacing for clearer edge routing
-  // Left node's right side connects to right node's left side
-  const horizontalSpacing = 500;
+  // Position nodes VERTICALLY (stacked) to prevent bidirectional edges from overlapping
+  // This ensures forward edge goes right->down->left, backward goes left->up->right
+  const verticalSpacing = 350; // Generous vertical spacing
   const pos1 = {
-    x: centerX - horizontalSpacing / 2,
-    y: centerY,
+    x: centerX,
+    y: centerY - verticalSpacing / 2, // Top node
   };
   const pos2 = {
-    x: centerX + horizontalSpacing / 2,
-    y: centerY,
+    x: centerX,
+    y: centerY + verticalSpacing / 2, // Bottom node
   };
 
   // Find forward and backward connections
@@ -161,8 +161,9 @@ export function layoutDoublyLinked(
       edgeType: "smoothstep",
       style: doubleLinkedStyle,
       pathOptions: {
-        offset: 20, // Offset upward for top edge
-        curvature: 0.25,
+        offset: 40, // Offset to the right for forward edge
+        curvature: 0.3,
+        borderRadius: 20,
       },
       markerEnd: {
         type: "arrowclosed",
@@ -177,8 +178,9 @@ export function layoutDoublyLinked(
       edgeType: "smoothstep",
       style: doubleLinkedStyle,
       pathOptions: {
-        offset: -20, // Offset downward for bottom edge
-        curvature: 0.25,
+        offset: -40, // Offset to the left for backward edge
+        curvature: 0.3,
+        borderRadius: 20,
       },
       markerEnd: {
         type: "arrowclosed",
@@ -201,8 +203,8 @@ export function layoutDoublyLinked(
 
 /**
  * Layout a circular list pattern (A → B → C → A)
- * Arranges nodes in a circle or polygon
- * Positioned clockwise so edges flow naturally from right (source) to left (target)
+ * Arranges nodes in a circle with MUCH larger radius to prevent edge-node overlap
+ * Nodes positioned to ensure edges flow around the perimeter, not through the center
  */
 export function layoutCircularList(
   scc: InstanceGroup,
@@ -218,17 +220,21 @@ export function layoutCircularList(
     return createEmptyLayout();
   }
 
-  // Calculate radius based on node count (more nodes = larger circle)
-  // Increased radius for better spacing and cleaner edge routing
-  const radius = Math.max(300, nodeCount * 120);
-  const angleStep = (2 * Math.PI) / nodeCount;
+  // SIGNIFICANTLY increased radius to prevent edges from crossing through nodes
+  // Formula: more nodes need exponentially more space
+  // Minimum 450px radius ensures edges go around, not through
+  const baseRadius = 450;
+  const radiusPerNode = 150; // Generous spacing per node
+  const radius = Math.max(baseRadius, nodeCount * radiusPerNode);
 
+  const angleStep = (2 * Math.PI) / nodeCount;
   const positions = new Map<string, { x: number; y: number }>();
 
-  // Arrange nodes in a circle starting from right side (0 degrees)
-  // Positioned clockwise to flow naturally with source handles on right
+  // Arrange nodes in a circle starting from top (for better visual symmetry)
+  // Starting from -PI/2 (top) and going clockwise
   nodeIds.forEach((id, index) => {
-    const angle = index * angleStep; // Start from right (0 degrees), go clockwise
+    // Start from top (-PI/2) and go clockwise for clean flow
+    const angle = -Math.PI / 2 + index * angleStep;
     positions.set(id, {
       x: centerX + radius * Math.cos(angle),
       y: centerY + radius * Math.sin(angle),
@@ -248,7 +254,7 @@ export function layoutCircularList(
       strokeWidth: 3,
     },
     pathOptions: {
-      borderRadius: 20, // Smooth corners for circular flow
+      borderRadius: 30, // Larger radius for smoother curves that avoid center
     },
     animated: true,
     markerEnd: {
@@ -266,7 +272,7 @@ export function layoutCircularList(
 
 /**
  * Layout a general cycle pattern (complex cycles)
- * Uses radial layout with increased spacing for complex edge routing
+ * Uses LARGE radial layout to ensure edges route around perimeter, not through center
  */
 export function layoutGeneralCycle(
   scc: InstanceGroup,
@@ -282,17 +288,19 @@ export function layoutGeneralCycle(
     return createEmptyLayout();
   }
 
-  // Use radial layout with larger radius for complex cycles
-  // Extra spacing helps prevent edge overlap in complex structures
-  const radius = Math.max(400, nodeCount * 150);
-  const angleStep = (2 * Math.PI) / nodeCount;
+  // MUCH larger radius for complex cycles to prevent edge-node overlap
+  // Complex cycles need even more space than simple circular lists
+  const baseRadius = 500;
+  const radiusPerNode = 180; // Extra generous for complex patterns
+  const radius = Math.max(baseRadius, nodeCount * radiusPerNode);
 
+  const angleStep = (2 * Math.PI) / nodeCount;
   const positions = new Map<string, { x: number; y: number }>();
 
-  // Arrange nodes in a circle starting from right side
-  // Evenly distributed for balanced layout
+  // Arrange nodes starting from top for visual clarity
   nodeIds.forEach((id, index) => {
-    const angle = index * angleStep; // Start from right (0 degrees)
+    // Start from top (-PI/2) for better symmetry
+    const angle = -Math.PI / 2 + index * angleStep;
     positions.set(id, {
       x: centerX + radius * Math.cos(angle),
       y: centerY + radius * Math.sin(angle),
@@ -313,7 +321,7 @@ export function layoutGeneralCycle(
       strokeDasharray: "8,4", // Dashed for complexity
     },
     pathOptions: {
-      borderRadius: 15, // Moderate rounding for complex paths
+      borderRadius: 40, // Large border radius for sweeping curves around perimeter
     },
     animated: true,
     markerEnd: {
