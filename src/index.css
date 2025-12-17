@@ -151,3 +151,28 @@ textarea {
     animation: scaleIn 0.15s ease-out;
     transform-origin: top;
 }
+
+/* Animated connection line while dragging */
+.react-flow__connection-path {
+    stroke-width: 4;
+    stroke-dasharray: 8, 8;
+    animation: dash 1s linear infinite, pulse 0.5s ease-in-out infinite alternate;
+    filter: drop-shadow(0 0 8px currentColor);
+}
+
+@keyframes dash {
+    to {
+        stroke-dashoffset: -16;
+    }
+}
+
+@keyframes pulse {
+    from {
+        opacity: 0.8;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Pointer handles - static, no animations */

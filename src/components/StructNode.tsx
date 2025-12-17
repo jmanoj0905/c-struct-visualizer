@@ -22,7 +22,7 @@ interface StructNodeData {
   }>;
 }
 
-function StructNode({ data }: { data: StructNodeData }) {
+function StructNode({ data, selected }: { data: StructNodeData; selected?: boolean }) {
   const {
     updateFieldValue,
     removeInstance,
@@ -74,14 +74,20 @@ function StructNode({ data }: { data: StructNodeData }) {
   };
 
   return (
-    <div className="group/card bg-white rounded-base shadow-shadow border-2 border-black min-w-[280px]">
-      {/* Target handle on the left (to receive pointers pointing to this instance) */}
+    <div
+      className={`group/card bg-white rounded-base shadow-shadow border-2 min-w-[280px] ${
+        selected
+          ? 'border-blue-600 ring-4 ring-blue-400 ring-opacity-50'
+          : 'border-black'
+      }`}
+    >
+      {/* Target handle - left (aligned with instance name) */}
       <Handle
         type="target"
         position={Position.Left}
-        id={`target-${data.instanceId}`}
+        id={`target-left-${data.instanceId}`}
         className="!bg-black !w-6 !h-6 !border-4 !border-white !rounded-none"
-        style={{ top: "50%" }}
+        style={{ top: "28px" }}
         isConnectable={true}
       />
 
@@ -328,7 +334,7 @@ function StructNode({ data }: { data: StructNodeData }) {
                                 data-field-type={field.type}
                                 data-field-name={arrayFieldName}
                                 data-is-pointer="true"
-                                className="!bg-black !w-5 !h-5 !border-3 !border-white hover:!w-6 hover:!h-6 transition-all cursor-pointer !absolute !right-0 !rounded-none"
+                                className="!bg-black !w-5 !h-5 !border-3 !border-white cursor-pointer !absolute !right-0 !rounded-none"
                                 style={{
                                   top: "50%",
                                   transform: "translateY(-50%)",
@@ -372,7 +378,7 @@ function StructNode({ data }: { data: StructNodeData }) {
                     data-field-type={field.type}
                     data-field-name={field.name}
                     data-is-pointer="true"
-                    className="!bg-black !w-6 !h-6 !border-4 !border-white hover:!w-7 hover:!h-7 transition-all cursor-pointer !rounded-none"
+                    className="!bg-black !w-6 !h-6 !border-4 !border-white cursor-pointer !rounded-none"
                     title={`Connect ${field.name}`}
                   />
                 )}

@@ -8,12 +8,15 @@ import {
   Layers,
   Plus,
   Box,
+  Sparkles,
 } from "lucide-react";
+import { useState } from "react";
 import { useCanvasStore } from "../store/canvasStore";
 import type { CStruct } from "../types";
 import { getStructColor, UI_COLORS } from "../utils/colors";
 import { Button } from "./ui/button";
 import { showAlert } from "./AlertContainer";
+import TemplateModal from "./TemplateModal";
 
 interface SidebarProps {
   onEditStruct: (structName: string) => void;
@@ -398,6 +401,9 @@ const Sidebar = ({
   const {
     structDefinitions,
     deleteStructDefinition,
+    addStructDefinition,
+    addInstance,
+    addConnection,
     instances,
   } = useCanvasStore();
 
@@ -435,6 +441,345 @@ const Sidebar = ({
     });
   };
 
+      if (templateKey === "singlyLinkedList") {
+        // Create 3 linked list nodes
+        const struct = latestStructDefs.find((s) => s.name === "Node");
+        if (!struct) return;
+
+        addInstance(struct, { x: 100, y: 200 }, "head");
+        addInstance(struct, { x: 400, y: 200 }, "node_2");
+        addInstance(struct, { x: 700, y: 200 }, "node_3");
+
+        // Set field values and connect
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 10);
+          if (inst2) updateFieldValue(inst2.id, "data", 20);
+          if (inst3) updateFieldValue(inst3.id, "data", 30);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "doublyLinkedList") {
+        // Create 3 doubly linked list nodes in horizontal line
+        const struct = latestStructDefs.find((s) => s.name === "DNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 100, y: 250 }, "node_1");
+        addInstance(struct, { x: 400, y: 250 }, "node_2");
+        addInstance(struct, { x: 700, y: 250 }, "node_3");
+
+        // Set field values and connect bidirectionally
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 5);
+          if (inst2) updateFieldValue(inst2.id, "data", 10);
+          if (inst3) updateFieldValue(inst3.id, "data", 15);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "prev",
+              targetInstanceId: inst1.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+            addConnection({
+              sourceInstanceId: inst3.id,
+              sourceFieldName: "prev",
+              targetInstanceId: inst2.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "tree") {
+        // Create a small binary tree (root + 2 children)
+        const struct = latestStructDefs.find((s) => s.name === "TreeNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 400, y: 100 }, "root");
+        addInstance(struct, { x: 200, y: 300 }, "left_child");
+        addInstance(struct, { x: 600, y: 300 }, "right_child");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const rootInst = allInstances[allInstances.length - 3];
+          const leftInst = allInstances[allInstances.length - 2];
+          const rightInst = allInstances[allInstances.length - 1];
+
+          if (rootInst) updateFieldValue(rootInst.id, "value", 50);
+          if (leftInst) updateFieldValue(leftInst.id, "value", 30);
+          if (rightInst) updateFieldValue(rightInst.id, "value", 70);
+
+          if (rootInst && leftInst) {
+            addConnection({
+              sourceInstanceId: rootInst.id,
+              sourceFieldName: "left",
+              targetInstanceId: leftInst.id,
+            });
+          }
+          if (rootInst && rightInst) {
+            addConnection({
+              sourceInstanceId: rootInst.id,
+              sourceFieldName: "right",
+              targetInstanceId: rightInst.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "graph") {
+        // Create 4 graph nodes with some connections
+        const struct = latestStructDefs.find((s) => s.name === "GraphNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 200, y: 200 }, "node_A");
+        addInstance(struct, { x: 500, y: 200 }, "node_B");
+        addInstance(struct, { x: 200, y: 400 }, "node_C");
+        addInstance(struct, { x: 500, y: 400 }, "node_D");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 4];
+          const inst2 = allInstances[allInstances.length - 3];
+          const inst3 = allInstances[allInstances.length - 2];
+          const inst4 = allInstances[allInstances.length - 1];
+
+          if (inst1) {
+            updateFieldValue(inst1.id, "id", 1);
+            updateFieldValue(inst1.id, "edgeCount", 2);
+          }
+          if (inst2) {
+            updateFieldValue(inst2.id, "id", 2);
+            updateFieldValue(inst2.id, "edgeCount", 1);
+          }
+          if (inst3) {
+            updateFieldValue(inst3.id, "id", 3);
+            updateFieldValue(inst3.id, "edgeCount", 0);
+          }
+          if (inst4) {
+            updateFieldValue(inst4.id, "id", 4);
+            updateFieldValue(inst4.id, "edgeCount", 0);
+          }
+
+          // Connect node1 to node2 and node3
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "edges[0]",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst1 && inst3) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "edges[1]",
+              targetInstanceId: inst3.id,
+            });
+          }
+          // Connect node2 to node4
+          if (inst2 && inst4) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "edges[0]",
+              targetInstanceId: inst4.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "stack") {
+        // Create 3 nodes in a vertical stack
+        const struct = latestStructDefs.find((s) => s.name === "StackNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 300, y: 100 }, "top");
+        addInstance(struct, { x: 300, y: 250 }, "middle");
+        addInstance(struct, { x: 300, y: 400 }, "bottom");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 100);
+          if (inst2) updateFieldValue(inst2.id, "data", 200);
+          if (inst3) updateFieldValue(inst3.id, "data", 300);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "queue") {
+        // Create 3 nodes in a horizontal queue
+        const struct = latestStructDefs.find((s) => s.name === "QueueNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 100, y: 250 }, "front");
+        addInstance(struct, { x: 400, y: 250 }, "middle");
+        addInstance(struct, { x: 700, y: 250 }, "rear");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 3];
+          const inst2 = allInstances[allInstances.length - 2];
+          const inst3 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 1);
+          if (inst2) updateFieldValue(inst2.id, "data", 2);
+          if (inst3) updateFieldValue(inst3.id, "data", 3);
+
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "circularList") {
+        // Create 4 nodes in a circle
+        const struct = latestStructDefs.find((s) => s.name === "CircNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 300, y: 100 }, "node_1");
+        addInstance(struct, { x: 500, y: 200 }, "node_2");
+        addInstance(struct, { x: 300, y: 400 }, "node_3");
+        addInstance(struct, { x: 100, y: 200 }, "node_4");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const inst1 = allInstances[allInstances.length - 4];
+          const inst2 = allInstances[allInstances.length - 3];
+          const inst3 = allInstances[allInstances.length - 2];
+          const inst4 = allInstances[allInstances.length - 1];
+
+          if (inst1) updateFieldValue(inst1.id, "data", 10);
+          if (inst2) updateFieldValue(inst2.id, "data", 20);
+          if (inst3) updateFieldValue(inst3.id, "data", 30);
+          if (inst4) updateFieldValue(inst4.id, "data", 40);
+
+          // Create circular connections
+          if (inst1 && inst2) {
+            addConnection({
+              sourceInstanceId: inst1.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst2.id,
+            });
+          }
+          if (inst2 && inst3) {
+            addConnection({
+              sourceInstanceId: inst2.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst3.id,
+            });
+          }
+          if (inst3 && inst4) {
+            addConnection({
+              sourceInstanceId: inst3.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst4.id,
+            });
+          }
+          if (inst4 && inst1) {
+            addConnection({
+              sourceInstanceId: inst4.id,
+              sourceFieldName: "next",
+              targetInstanceId: inst1.id,
+            });
+          }
+        }, 100);
+      } else if (templateKey === "bst") {
+        // Create a BST with root and children with parent pointers
+        const struct = latestStructDefs.find((s) => s.name === "BSTNode");
+        if (!struct) return;
+
+        addInstance(struct, { x: 400, y: 100 }, "root");
+        addInstance(struct, { x: 200, y: 300 }, "left");
+        addInstance(struct, { x: 600, y: 300 }, "right");
+
+        setTimeout(() => {
+          const allInstances = useCanvasStore.getState().instances;
+          const rootInst = allInstances[allInstances.length - 3];
+          const leftInst = allInstances[allInstances.length - 2];
+          const rightInst = allInstances[allInstances.length - 1];
+
+          if (rootInst) updateFieldValue(rootInst.id, "key", 50);
+          if (leftInst) updateFieldValue(leftInst.id, "key", 25);
+          if (rightInst) updateFieldValue(rightInst.id, "key", 75);
+
+          if (rootInst && leftInst) {
+            addConnection({
+              sourceInstanceId: rootInst.id,
+              sourceFieldName: "left",
+              targetInstanceId: leftInst.id,
+            });
+            addConnection({
+              sourceInstanceId: leftInst.id,
+              sourceFieldName: "parent",
+              targetInstanceId: rootInst.id,
+            });
+          }
+          if (rootInst && rightInst) {
+            addConnection({
+              sourceInstanceId: rootInst.id,
+              sourceFieldName: "right",
+              targetInstanceId: rightInst.id,
+            });
+            addConnection({
+              sourceInstanceId: rightInst.id,
+              sourceFieldName: "parent",
+              targetInstanceId: rootInst.id,
+            });
+          }
+        }, 100);
+      }
+    }, 200);
+  };
 
   return (
     <div className="h-screen w-64 bg-white border-r-4 border-black flex flex-col">
@@ -531,6 +876,13 @@ const Sidebar = ({
         )}
       </div>
 
+      {/* Template Modal */}
+      <TemplateModal
+        isOpen={showTemplateModal}
+        onClose={onCloseTemplateModal}
+        onSelectTemplate={onSelectTemplate}
+        templates={templates}
+      />
     </div>
   );
 };
