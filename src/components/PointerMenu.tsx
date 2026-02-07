@@ -174,11 +174,11 @@ const PointerMenu = ({ isOpen, onToggle }: PointerMenuProps) => {
 
       {/* Panel */}
       <div
-        className={`fixed top-0 right-0 h-full z-20 transition-transform duration-500 ease-in-out ${
+        className={`fixed top-10 right-0 h-[calc(100vh-2.5rem)] z-20 transition-transform duration-500 ease-in-out ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="h-screen w-56 bg-white border-l-4 border-black flex flex-col">
+        <div className="h-full w-56 bg-white border-l-4 border-black flex flex-col">
           {/* Header */}
           <div
             className="p-3 border-b-4 border-black flex items-center gap-2"

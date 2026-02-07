@@ -437,7 +437,7 @@ const Sidebar = ({
 
 
   return (
-    <div className="h-screen w-64 bg-white border-r-4 border-black flex flex-col">
+    <div className="h-full w-64 bg-white border-r-4 border-black flex flex-col">
       {/* Logo & Header */}
       <div
         className="p-3 border-b-4 border-black flex items-center justify-between gap-2"

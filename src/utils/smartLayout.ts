@@ -283,9 +283,9 @@ function layoutHierarchical(
  */
 function layoutGraphWithCycles(
   component: ComponentInfo,
-  instances: StructInstance[],
+  _instances: StructInstance[],
   connections: PointerConnection[],
-  structDefinitions: CStruct[],
+  _structDefinitions: CStruct[],
   _nodeHeights: Map<string, number>,
   config: LayoutConfig,
 ): Map<string, { x: number; y: number }> {
@@ -330,7 +330,7 @@ function layoutGraphWithCycles(
    */
   function layoutCycleRhombus(
     nodes: string[],
-    config: LayoutConfig,
+    _config: LayoutConfig,
   ): Map<string, { x: number; y: number }> {
     const positions = new Map<string, { x: number; y: number }>();
     const n = nodes.length;

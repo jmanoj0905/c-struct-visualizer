@@ -28,6 +28,7 @@ import StructNode from "./components/StructNode";
 import PointerNode from "./components/PointerNode";
 import StructEditor from "./components/StructEditor";
 import Sidebar from "./components/Sidebar";
+import WorkspaceTabBar from "./components/WorkspaceTabBar";
 import PointerMenu from "./components/PointerMenu";
 import Settings from "./components/Settings";
 import Dock from "./components/Dock";
@@ -74,6 +75,7 @@ function FlowCanvas() {
     updatePointerInstanceTarget,
     removePointerInstance,
     removePointerInstances,
+    activeWorkspaceId,
   } = useCanvasStore();
 
   const [showEditor, setShowEditor] = useState(false);
@@ -124,6 +126,11 @@ function FlowCanvas() {
   useEffect(() => {
     localStorage.setItem("snap-to-grid", JSON.stringify(snapToGrid));
   }, [snapToGrid]);
+
+  // Fit view when workspace tab changes
+  useEffect(() => {
+    setTimeout(() => fitView({ padding: 0.3, duration: 300, maxZoom: 0.9 }), 100);
+  }, [activeWorkspaceId, fitView]);
   const [connectionPopup, setConnectionPopup] = useState<{
     show: boolean;
     sourceInstanceId: string;
@@ -1626,7 +1633,9 @@ function FlowCanvas() {
   );
 
   return (
-    <div ref={reactFlowWrapper} className="w-screen h-screen bg-gray-50">
+    <>
+    <WorkspaceTabBar />
+    <div ref={reactFlowWrapper} className="w-screen h-[calc(100vh-2.5rem)] mt-10 bg-gray-50">
       <AlertContainer />
       {/* Sidebar Toggle Button - On the edge of sidebar */}
       <button
@@ -1652,7 +1661,7 @@ function FlowCanvas() {
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 left-0 h-full z-20 transition-transform duration-500 ease-in-out ${
+        className={`fixed top-10 left-0 h-[calc(100vh-2.5rem)] z-20 transition-transform duration-500 ease-in-out ${
           showSidebar ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -1723,7 +1732,7 @@ function FlowCanvas() {
 
       {/* Hamburger Menu - Top Right */}
       <div
-        className="fixed top-4 z-10 transition-all duration-500 ease-in-out"
+        className="fixed top-14 z-10 transition-all duration-500 ease-in-out"
         style={{ right: showPointerMenu ? "15.5rem" : "1rem" }}
       >
         <HamburgerMenu
@@ -2188,7 +2197,23 @@ function FlowCanvas() {
                 </button>
                 <button
                   onClick={() => {
-                    setCopiedNodes([contextMenu.nodeId!]);
+                    const nodeId = contextMenu.nodeId!;
+                    const structConns = connections
+                      .filter((conn) => conn.sourceInstanceId === nodeId)
+                      .map((conn) => ({
+                        sourceId: conn.sourceInstanceId,
+                        targetId: conn.targetInstanceId,
+                        fieldName: conn.sourceFieldName,
+                        targetFieldName: conn.targetFieldName ?? null,
+                      }));
+                    const ptrTargets = pointerInstances
+                      .filter((pi) => pi.id === nodeId && pi.targetInstanceId)
+                      .map((pi) => ({
+                        pointerId: pi.id,
+                        targetId: pi.targetInstanceId!,
+                        targetFieldName: pi.targetFieldName,
+                      }));
+                    setClipboard({ nodeIds: [nodeId], structConnections: structConns, pointerTargets: ptrTargets });
                     setContextMenu(null);
                     showAlert({
                       type: "success",
@@ -2432,6 +2457,7 @@ function FlowCanvas() {
         </>
       )}
     </div>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useStore, getSmoothStepPath } from '@xyflow/react';
+import { useStore } from '@xyflow/react';
 import type { EdgeProps, Node } from '@xyflow/react';
 import { getNodeIntersection } from './FloatingEdgeUtils';
 

@@ -1,5 +1,11 @@
 // Core type definitions for the C struct visualizer
 
+export interface WorkspaceTab {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
 export type CPrimitiveType =
   | "int"
   | "char"

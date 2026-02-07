@@ -362,12 +362,12 @@ export function canConnectPointer(
   targetStructName: string,
 ): boolean {
   // void* can point to anything
-  if (pointerType.toLowerCase() === "void") {
+  if (pointerType === "void") {
     return true;
   }
 
-  // Case-insensitive type matching
-  return pointerType.toLowerCase() === targetStructName.toLowerCase();
+  // Case-sensitive type matching
+  return pointerType === targetStructName;
 }
 
 /**
@@ -389,13 +389,13 @@ export function canConnectPointerToPointer(
   if (targetLevel !== sourceLevel - 1) return false;
 
   // void** (any level) can point to any pointer of the right level
-  if (sourceType.toLowerCase() === "void") return true;
+  if (sourceType === "void") return true;
 
   // Resolve typedefs for both types (resolveTypeName returns canonical names)
   const resolvedSource = resolveTypeName(sourceType, structs);
   const resolvedTarget = resolveTypeName(targetType, structs);
 
-  return resolvedSource.toLowerCase() === resolvedTarget.toLowerCase();
+  return resolvedSource === resolvedTarget;
 }
 
 /**
@@ -426,35 +426,34 @@ export function canConnectPointerToField(
 
   // Struct-type pointers cannot target fields (they target whole structs)
   if (!isPrimitiveType(pointerBaseType)) {
-    // Check if it's a known struct type (case-insensitive, including via typedef)
-    const lowerType = pointerBaseType.toLowerCase();
+    // Check if it's a known struct type (case-sensitive, including via typedef)
     const isStructType = structs.some(
-      (s) => s.name.toLowerCase() === lowerType || s.typedef?.toLowerCase() === lowerType,
+      (s) => s.name === pointerBaseType || s.typedef === pointerBaseType,
     );
     if (isStructType) return false;
   }
 
   // void* can target any eligible field
-  if (pointerBaseType.toLowerCase() === "void") return true;
+  if (pointerBaseType === "void") return true;
 
-  // Case-insensitive base type matching
-  return pointerBaseType.toLowerCase() === targetFieldType.toLowerCase();
+  // Case-sensitive base type matching
+  return pointerBaseType === targetFieldType;
 }
 
 /**
  * Resolve a type name to struct name (handles typedef)
  */
 export function resolveTypeName(typeName: string, structs: CStruct[]): string {
-  // Check if typeName is a typedef (case-insensitive), if so return the struct name
+  // Check if typeName is a typedef (case-sensitive), if so return the struct name
   const structWithTypedef = structs.find(
-    (s) => s.typedef?.toLowerCase() === typeName.toLowerCase(),
+    (s) => s.typedef === typeName,
   );
   if (structWithTypedef) {
     return structWithTypedef.name;
   }
-  // Check if typeName matches a struct name (case-insensitive), return canonical name
+  // Check if typeName matches a struct name (case-sensitive), return canonical name
   const structByName = structs.find(
-    (s) => s.name.toLowerCase() === typeName.toLowerCase(),
+    (s) => s.name === typeName,
   );
   if (structByName) {
     return structByName.name;
@@ -524,7 +523,7 @@ export function getTypeSize(type: string, structs: CStruct[]): number {
  */
 export function parsePointerDeclaration(
   declaration: string,
-): Omit<PointerVariable, "id" | "rawDeclaration"> | null {
+): Omit<PointerVariable, "id" | "rawDeclaration" | "color"> | null {
   const trimmed = declaration.trim().replace(/;$/, "").trim();
   if (!trimmed) return null;
 

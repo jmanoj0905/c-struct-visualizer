@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance } from "../types";
+import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance, WorkspaceTab } from "../types";
 import { canConnectPointer, resolveTypeName } from "../parser/structParser";
 
-interface HistoryState {
+export interface HistoryState {
   structDefinitions: CStruct[];
   instances: StructInstance[];
   connections: PointerConnection[];
@@ -70,11 +70,78 @@ interface CanvasState {
   clearAll: () => void;
   exportWorkspace: () => string;
   importWorkspace: (data: string) => void;
+
+  // Workspace tabs
+  workspaceTabs: WorkspaceTab[];
+  activeWorkspaceId: string;
+  addWorkspace: () => void;
+  removeWorkspace: (id: string) => void;
+  renameWorkspace: (id: string, name: string) => void;
+  switchWorkspace: (id: string) => void;
+  duplicateWorkspace: (id: string) => void;
 }
 
 let instanceCounter = 0;
 
 const MAX_HISTORY_SIZE = 50;
+
+// --- localStorage helpers for workspace snapshots ---
+const WS_KEY = "c-struct-workspace-";
+
+interface WorkspaceSnapshot {
+  structDefinitions: CStruct[];
+  instances: StructInstance[];
+  connections: PointerConnection[];
+  pointerDefinitions: PointerVariable[];
+  pointerInstances: PointerInstance[];
+  history: HistoryState[];
+  historyIndex: number;
+}
+
+function saveSnapshot(id: string, state: CanvasState) {
+  try {
+    localStorage.setItem(
+      WS_KEY + id,
+      JSON.stringify({
+        structDefinitions: state.structDefinitions,
+        instances: state.instances,
+        connections: state.connections,
+        pointerDefinitions: state.pointerDefinitions,
+        pointerInstances: state.pointerInstances,
+        history: state.history,
+        historyIndex: state.historyIndex,
+      }),
+    );
+  } catch {
+    console.warn("localStorage quota exceeded when saving workspace snapshot");
+  }
+}
+
+function loadSnapshot(id: string): WorkspaceSnapshot | null {
+  try {
+    const raw = localStorage.getItem(WS_KEY + id);
+    if (!raw) return null;
+    return JSON.parse(raw) as WorkspaceSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function deleteSnapshot(id: string) {
+  localStorage.removeItem(WS_KEY + id);
+}
+
+function emptySnapshot(): Omit<WorkspaceSnapshot, "history" | "historyIndex"> & { history: HistoryState[]; historyIndex: number } {
+  return {
+    structDefinitions: [],
+    instances: [],
+    connections: [],
+    pointerDefinitions: [],
+    pointerInstances: [],
+    history: [],
+    historyIndex: -1,
+  };
+}
 
 export const useCanvasStore = create<CanvasState>()(
   persist<CanvasState>(
@@ -82,6 +149,10 @@ export const useCanvasStore = create<CanvasState>()(
       structDefinitions: [],
       history: [],
       historyIndex: -1,
+
+      // Workspace tabs - defaults
+      workspaceTabs: [{ id: "ws-default", name: "Workspace 1", createdAt: Date.now() }],
+      activeWorkspaceId: "ws-default",
 
       saveHistory: () => {
         const state = get();
@@ -603,10 +674,178 @@ export const useCanvasStore = create<CanvasState>()(
           alert("Failed to import workspace. Invalid file format.");
         }
       },
+
+      // --- Workspace tab actions ---
+
+      switchWorkspace: (targetId: string) => {
+        const state = get();
+        if (targetId === state.activeWorkspaceId) return;
+
+        // Save current workspace snapshot
+        saveSnapshot(state.activeWorkspaceId, state);
+
+        // Load target workspace snapshot
+        const snapshot = loadSnapshot(targetId);
+        const data = snapshot || emptySnapshot();
+
+        set({
+          structDefinitions: data.structDefinitions,
+          instances: data.instances,
+          connections: data.connections,
+          pointerDefinitions: data.pointerDefinitions,
+          pointerInstances: data.pointerInstances,
+          history: data.history,
+          historyIndex: data.historyIndex,
+          activeWorkspaceId: targetId,
+          selectedInstanceId: null,
+        });
+      },
+
+      addWorkspace: () => {
+        const state = get();
+
+        // Save current workspace snapshot
+        saveSnapshot(state.activeWorkspaceId, state);
+
+        const newId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const newTab: WorkspaceTab = {
+          id: newId,
+          name: `Workspace ${state.workspaceTabs.length + 1}`,
+          createdAt: Date.now(),
+        };
+        const empty = emptySnapshot();
+
+        set({
+          workspaceTabs: [...state.workspaceTabs, newTab],
+          activeWorkspaceId: newId,
+          structDefinitions: empty.structDefinitions,
+          instances: empty.instances,
+          connections: empty.connections,
+          pointerDefinitions: empty.pointerDefinitions,
+          pointerInstances: empty.pointerInstances,
+          history: empty.history,
+          historyIndex: empty.historyIndex,
+          selectedInstanceId: null,
+        });
+      },
+
+      removeWorkspace: (id: string) => {
+        const state = get();
+        // Guard: cannot close the last tab
+        if (state.workspaceTabs.length <= 1) return;
+
+        const tabIndex = state.workspaceTabs.findIndex((t) => t.id === id);
+        if (tabIndex === -1) return;
+
+        // Delete snapshot from localStorage
+        deleteSnapshot(id);
+
+        const remainingTabs = state.workspaceTabs.filter((t) => t.id !== id);
+
+        if (id === state.activeWorkspaceId) {
+          // Switch to nearest remaining tab
+          const newActiveIndex = Math.min(tabIndex, remainingTabs.length - 1);
+          const newActiveId = remainingTabs[newActiveIndex].id;
+
+          const snapshot = loadSnapshot(newActiveId);
+          const data = snapshot || emptySnapshot();
+
+          set({
+            workspaceTabs: remainingTabs,
+            activeWorkspaceId: newActiveId,
+            structDefinitions: data.structDefinitions,
+            instances: data.instances,
+            connections: data.connections,
+            pointerDefinitions: data.pointerDefinitions,
+            pointerInstances: data.pointerInstances,
+            history: data.history,
+            historyIndex: data.historyIndex,
+            selectedInstanceId: null,
+          });
+        } else {
+          set({ workspaceTabs: remainingTabs });
+        }
+      },
+
+      renameWorkspace: (id: string, name: string) => {
+        set((state) => ({
+          workspaceTabs: state.workspaceTabs.map((t) =>
+            t.id === id ? { ...t, name } : t,
+          ),
+        }));
+      },
+
+      duplicateWorkspace: (id: string) => {
+        const state = get();
+        const sourceTab = state.workspaceTabs.find((t) => t.id === id);
+        if (!sourceTab) return;
+
+        // Save current workspace so snapshot is fresh
+        saveSnapshot(state.activeWorkspaceId, state);
+
+        // Get the source data
+        let sourceData: WorkspaceSnapshot;
+        if (id === state.activeWorkspaceId) {
+          sourceData = {
+            structDefinitions: JSON.parse(JSON.stringify(state.structDefinitions)),
+            instances: JSON.parse(JSON.stringify(state.instances)),
+            connections: JSON.parse(JSON.stringify(state.connections)),
+            pointerDefinitions: JSON.parse(JSON.stringify(state.pointerDefinitions)),
+            pointerInstances: JSON.parse(JSON.stringify(state.pointerInstances)),
+            history: JSON.parse(JSON.stringify(state.history)),
+            historyIndex: state.historyIndex,
+          };
+        } else {
+          const snapshot = loadSnapshot(id);
+          sourceData = snapshot
+            ? JSON.parse(JSON.stringify(snapshot))
+            : { ...emptySnapshot() };
+        }
+
+        const newId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const newTab: WorkspaceTab = {
+          id: newId,
+          name: `${sourceTab.name} (copy)`,
+          createdAt: Date.now(),
+        };
+
+        // Save clone to localStorage
+        try {
+          localStorage.setItem(WS_KEY + newId, JSON.stringify(sourceData));
+        } catch {
+          console.warn("localStorage quota exceeded when duplicating workspace");
+        }
+
+        // Insert new tab after source tab
+        const sourceIndex = state.workspaceTabs.findIndex((t) => t.id === id);
+        const newTabs = [...state.workspaceTabs];
+        newTabs.splice(sourceIndex + 1, 0, newTab);
+
+        // Switch to the duplicated workspace
+        set({
+          workspaceTabs: newTabs,
+          activeWorkspaceId: newId,
+          structDefinitions: sourceData.structDefinitions,
+          instances: sourceData.instances,
+          connections: sourceData.connections,
+          pointerDefinitions: sourceData.pointerDefinitions,
+          pointerInstances: sourceData.pointerInstances,
+          history: sourceData.history,
+          historyIndex: sourceData.historyIndex,
+          selectedInstanceId: null,
+        });
+      },
     }),
     {
       name: "c-struct-visualizer-storage-v2",
       storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state) => {
+        if (state && (!state.workspaceTabs || state.workspaceTabs.length === 0)) {
+          const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          state.workspaceTabs = [{ id, name: "Workspace 1", createdAt: Date.now() }];
+          state.activeWorkspaceId = id;
+        }
+      },
     },
   ),
 );
