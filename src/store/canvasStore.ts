@@ -79,6 +79,9 @@ interface CanvasState {
   renameWorkspace: (id: string, name: string) => void;
   switchWorkspace: (id: string) => void;
   duplicateWorkspace: (id: string) => void;
+  reorderWorkspaces: (fromIndex: number, toIndex: number) => void;
+  closeOtherWorkspaces: (id: string) => void;
+  closeRightWorkspaces: (id: string) => void;
 }
 
 let instanceCounter = 0;
@@ -834,6 +837,85 @@ export const useCanvasStore = create<CanvasState>()(
           historyIndex: sourceData.historyIndex,
           selectedInstanceId: null,
         });
+      },
+      reorderWorkspaces: (fromIndex: number, toIndex: number) => {
+        const state = get();
+        const workspaceTabs = [...state.workspaceTabs];
+        const [moved] = workspaceTabs.splice(fromIndex, 1);
+        workspaceTabs.splice(toIndex, 0, moved);
+        set({ workspaceTabs });
+      },
+
+      closeOtherWorkspaces: (id: string) => {
+        const state = get();
+        const keepTab = state.workspaceTabs.find((t) => t.id === id);
+        if (!keepTab) return;
+
+        // Save current workspace snapshot
+        saveSnapshot(state.activeWorkspaceId, state);
+
+        // Delete snapshots for all other tabs
+        for (const tab of state.workspaceTabs) {
+          if (tab.id !== id) deleteSnapshot(tab.id);
+        }
+
+        // If kept tab isn't active, load its snapshot and switch
+        if (id !== state.activeWorkspaceId) {
+          const snapshot = loadSnapshot(id);
+          const data = snapshot || emptySnapshot();
+          set({
+            workspaceTabs: [keepTab],
+            activeWorkspaceId: id,
+            structDefinitions: data.structDefinitions,
+            instances: data.instances,
+            connections: data.connections,
+            pointerDefinitions: data.pointerDefinitions,
+            pointerInstances: data.pointerInstances,
+            history: data.history,
+            historyIndex: data.historyIndex,
+            selectedInstanceId: null,
+          });
+        } else {
+          set({ workspaceTabs: [keepTab] });
+        }
+      },
+
+      closeRightWorkspaces: (id: string) => {
+        const state = get();
+        const tabIndex = state.workspaceTabs.findIndex((t) => t.id === id);
+        if (tabIndex === -1) return;
+
+        const remainingTabs = state.workspaceTabs.slice(0, tabIndex + 1);
+        const removedTabs = state.workspaceTabs.slice(tabIndex + 1);
+
+        // Save current workspace snapshot
+        saveSnapshot(state.activeWorkspaceId, state);
+
+        // Delete snapshots for removed tabs
+        for (const tab of removedTabs) {
+          deleteSnapshot(tab.id);
+        }
+
+        // If active tab is being closed, switch to the kept tab
+        const activeIsRemoved = removedTabs.some((t) => t.id === state.activeWorkspaceId);
+        if (activeIsRemoved) {
+          const snapshot = loadSnapshot(id);
+          const data = snapshot || emptySnapshot();
+          set({
+            workspaceTabs: remainingTabs,
+            activeWorkspaceId: id,
+            structDefinitions: data.structDefinitions,
+            instances: data.instances,
+            connections: data.connections,
+            pointerDefinitions: data.pointerDefinitions,
+            pointerInstances: data.pointerInstances,
+            history: data.history,
+            historyIndex: data.historyIndex,
+            selectedInstanceId: null,
+          });
+        } else {
+          set({ workspaceTabs: remainingTabs });
+        }
       },
     }),
     {

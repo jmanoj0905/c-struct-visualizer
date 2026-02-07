@@ -289,7 +289,6 @@ Contributions are welcome! Please see our contributing guidelines:
   - Per-field target handles (small black squares) on the left edge of eligible fields
 - **Standalone Pointer Variables**: Declare and visualize standalone pointers (`int *ptr`, `Node *head`, `void *generic`) separate from structs
 - **Pointer-to-Pointer Chains**: Multi-level pointers (`int**`, `Node***`) can chain to lower-level pointers with full type validation
-- **Case-Insensitive Type Matching**: Pointer type names are matched case-insensitively against struct names (e.g., `node*` connects to `Node`)
 
 **Improvements:**
 - **Refined Handle Design**: Struct cards use square handles, pointer cards use circle handles, all consistently sized

@@ -1635,7 +1635,7 @@ function FlowCanvas() {
   return (
     <>
     <WorkspaceTabBar />
-    <div ref={reactFlowWrapper} className="w-screen h-[calc(100vh-2.5rem)] mt-10 bg-gray-50">
+    <div ref={reactFlowWrapper} className="w-screen h-[calc(100vh-1.75rem)] mt-7 bg-gray-50">
       <AlertContainer />
       {/* Sidebar Toggle Button - On the edge of sidebar */}
       <button
@@ -1661,7 +1661,7 @@ function FlowCanvas() {
 
       {/* Sidebar */}
       <div
-        className={`fixed top-10 left-0 h-[calc(100vh-2.5rem)] z-20 transition-transform duration-500 ease-in-out ${
+        className={`fixed top-7 left-0 h-[calc(100vh-1.75rem)] z-20 transition-transform duration-500 ease-in-out ${
           showSidebar ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -1732,7 +1732,7 @@ function FlowCanvas() {
 
       {/* Hamburger Menu - Top Right */}
       <div
-        className="fixed top-14 z-10 transition-all duration-500 ease-in-out"
+        className="fixed top-11 z-10 transition-all duration-500 ease-in-out"
         style={{ right: showPointerMenu ? "15.5rem" : "1rem" }}
       >
         <HamburgerMenu

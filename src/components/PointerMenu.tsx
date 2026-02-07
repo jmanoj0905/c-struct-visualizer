@@ -174,7 +174,7 @@ const PointerMenu = ({ isOpen, onToggle }: PointerMenuProps) => {
 
       {/* Panel */}
       <div
-        className={`fixed top-10 right-0 h-[calc(100vh-2.5rem)] z-20 transition-transform duration-500 ease-in-out ${
+        className={`fixed top-7 right-0 h-[calc(100vh-1.75rem)] z-20 transition-transform duration-500 ease-in-out ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
