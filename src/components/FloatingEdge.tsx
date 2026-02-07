@@ -24,20 +24,25 @@ export default function FloatingEdge({
 
   const { sx, sy, tx, ty } = getNodeIntersection(sourceNode, targetNode);
 
-  const [edgePath] = getSmoothStepPath({
-    sourceX: sx,
-    sourceY: sy,
-    targetX: tx,
-    targetY: ty,
-  });
+  // Create orthogonal path with mandatory horizontal extension
+  const HORIZONTAL_EXTENSION = 50;
+
+  // Determine direction
+  const goingRight = tx > sx;
+  const extendX = goingRight ? sx + HORIZONTAL_EXTENSION : sx - HORIZONTAL_EXTENSION;
+
+  // Build simple orthogonal path: horizontal -> vertical -> horizontal
+  const path = `M ${sx},${sy} L ${extendX},${sy} L ${extendX},${ty} L ${tx},${ty}`;
 
   return (
     <path
       id={id}
       className="react-flow__edge-path"
-      d={edgePath}
+      d={path}
       markerEnd={markerEnd}
       style={style}
+      fill="none"
+      strokeWidth={2}
     />
   );
 }

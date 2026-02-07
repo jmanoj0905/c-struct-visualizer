@@ -84,6 +84,30 @@ export function getRandomPastelColor(): string {
   return PASTEL_COLORS[Math.floor(Math.random() * PASTEL_COLORS.length)];
 }
 
+// Deterministic pastel color for pointers (based on index, no repeats until 40+)
+const pointerColorMap = new Map<string, number>();
+let nextPointerColorIndex = 0;
+
+export function getPointerColor(pointerName: string, allPointerNames?: string[]): string {
+  if (allPointerNames) {
+    const sortedNames = [...allPointerNames].sort();
+    pointerColorMap.clear();
+    sortedNames.forEach((name, index) => {
+      pointerColorMap.set(name, index % PASTEL_COLORS.length);
+    });
+    nextPointerColorIndex = sortedNames.length;
+  }
+
+  if (pointerColorMap.has(pointerName)) {
+    return PASTEL_COLORS[pointerColorMap.get(pointerName)!];
+  }
+
+  const colorIndex = nextPointerColorIndex % PASTEL_COLORS.length;
+  pointerColorMap.set(pointerName, colorIndex);
+  nextPointerColorIndex++;
+  return PASTEL_COLORS[colorIndex];
+}
+
 // Solid colors for UI elements (no gradients) - neobrutalism style
 export const UI_COLORS = {
   pink: "#FFB3D9",

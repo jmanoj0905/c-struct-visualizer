@@ -86,7 +86,7 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
         type="target"
         position={Position.Left}
         id={`target-left-${data.instanceId}`}
-        className="!bg-black !w-6 !h-6 !border-4 !border-white !rounded-none"
+        className="!bg-black !w-3.5 !h-3.5 !border-2 !border-white !rounded-none"
         style={{ top: "28px" }}
         isConnectable={true}
       />
@@ -159,6 +159,27 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
 
           return (
             <div key={field.name} className="relative">
+              {/* Per-field target handle (small black square) for primitive pointer targeting */}
+              {!field.isPointer && (
+                <Handle
+                  type="target"
+                  position={Position.Left}
+                  id={`field-target-${data.instanceId}-${field.name}`}
+                  className="!rounded-none"
+                  style={{
+                    position: 'absolute',
+                    left: -6,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 10,
+                    height: 10,
+                    background: '#000',
+                    border: '2px solid #fff',
+                    zIndex: 10,
+                  }}
+                  isConnectable={true}
+                />
+              )}
               {/* Field Row */}
               <div className="flex items-start gap-2 bg-white border-2 border-black p-2 rounded-base shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                 {/* Field name and type */}
@@ -334,7 +355,7 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
                                 data-field-type={field.type}
                                 data-field-name={arrayFieldName}
                                 data-is-pointer="true"
-                                className="!bg-black !w-5 !h-5 !border-3 !border-white cursor-pointer !absolute !right-0 !rounded-none"
+                                className="!bg-black !w-3.5 !h-3.5 !border-2 !border-white cursor-pointer !absolute !right-0 !rounded-none"
                                 style={{
                                   top: "50%",
                                   transform: "translateY(-50%)",
@@ -369,7 +390,7 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
                   )}
                 </div>
 
-                {/* Source handle (gray circle) for single pointers on the right */}
+                {/* Source handle (small square) for single pointers on the right */}
                 {field.isPointer && !field.isArray && (
                   <Handle
                     type="source"
@@ -378,7 +399,7 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
                     data-field-type={field.type}
                     data-field-name={field.name}
                     data-is-pointer="true"
-                    className="!bg-black !w-6 !h-6 !border-4 !border-white cursor-pointer !rounded-none"
+                    className="!bg-black !w-3.5 !h-3.5 !border-2 !border-white cursor-pointer !rounded-none"
                     title={`Connect ${field.name}`}
                   />
                 )}

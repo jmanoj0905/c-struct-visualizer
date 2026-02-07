@@ -1,4 +1,6 @@
-import type { CStruct, CField } from "../types";
+import type { CStruct, CField, PointerVariable } from "../types";
+
+export const PRIMITIVES = ["int", "char", "float", "double", "long", "short", "void", "bool"] as const;
 
 /**
  * Simple C struct parser for beginners
@@ -182,18 +184,7 @@ function parseField(fieldLine: string): CField | null {
  * Validate if a type exists (primitive or user-defined)
  */
 export function isValidType(type: string, customStructs: CStruct[]): boolean {
-  const primitives = [
-    "int",
-    "char",
-    "float",
-    "double",
-    "long",
-    "short",
-    "void",
-    "bool",
-  ];
-
-  if (primitives.includes(type)) {
+  if ((PRIMITIVES as readonly string[]).includes(type)) {
     return true;
   }
 
@@ -371,24 +362,104 @@ export function canConnectPointer(
   targetStructName: string,
 ): boolean {
   // void* can point to anything
-  if (pointerType === "void") {
+  if (pointerType.toLowerCase() === "void") {
     return true;
   }
 
-  // Type must match exactly (struct name)
-  return pointerType === targetStructName;
+  // Case-insensitive type matching
+  return pointerType.toLowerCase() === targetStructName.toLowerCase();
+}
+
+/**
+ * Check if a pointer-to-pointer connection is type-safe
+ * Source must be level >= 2, target must be exactly sourceLevel - 1, base types must match.
+ * void** can point to any single-level pointer.
+ */
+export function canConnectPointerToPointer(
+  sourceType: string,
+  sourceLevel: number,
+  targetType: string,
+  targetLevel: number,
+  structs: CStruct[],
+): boolean {
+  // Source must be at least a double pointer (level >= 2)
+  if (sourceLevel < 2) return false;
+
+  // Target must be exactly one level less
+  if (targetLevel !== sourceLevel - 1) return false;
+
+  // void** (any level) can point to any pointer of the right level
+  if (sourceType.toLowerCase() === "void") return true;
+
+  // Resolve typedefs for both types (resolveTypeName returns canonical names)
+  const resolvedSource = resolveTypeName(sourceType, structs);
+  const resolvedTarget = resolveTypeName(targetType, structs);
+
+  return resolvedSource.toLowerCase() === resolvedTarget.toLowerCase();
+}
+
+/**
+ * Check if a type name is a C primitive type
+ */
+export function isPrimitiveType(typeName: string): boolean {
+  return (PRIMITIVES as readonly string[]).includes(typeName.toLowerCase());
+}
+
+/**
+ * Check if a pointer can connect to a specific field inside a struct.
+ * Only level-1 primitive pointers (or void*) can target fields.
+ * Struct-type pointers always target whole structs.
+ */
+export function canConnectPointerToField(
+  pointerBaseType: string,
+  pointerLevel: number,
+  targetFieldType: string,
+  targetFieldIsPointer: boolean,
+  _targetFieldIsArray: boolean,
+  structs: CStruct[],
+): boolean {
+  // Only level-1 pointers can target fields
+  if (pointerLevel !== 1) return false;
+
+  // Target field must NOT be a pointer field
+  if (targetFieldIsPointer) return false;
+
+  // Struct-type pointers cannot target fields (they target whole structs)
+  if (!isPrimitiveType(pointerBaseType)) {
+    // Check if it's a known struct type (case-insensitive, including via typedef)
+    const lowerType = pointerBaseType.toLowerCase();
+    const isStructType = structs.some(
+      (s) => s.name.toLowerCase() === lowerType || s.typedef?.toLowerCase() === lowerType,
+    );
+    if (isStructType) return false;
+  }
+
+  // void* can target any eligible field
+  if (pointerBaseType.toLowerCase() === "void") return true;
+
+  // Case-insensitive base type matching
+  return pointerBaseType.toLowerCase() === targetFieldType.toLowerCase();
 }
 
 /**
  * Resolve a type name to struct name (handles typedef)
  */
 export function resolveTypeName(typeName: string, structs: CStruct[]): string {
-  // Check if typeName is a typedef, if so return the struct name
-  const structWithTypedef = structs.find((s) => s.typedef === typeName);
+  // Check if typeName is a typedef (case-insensitive), if so return the struct name
+  const structWithTypedef = structs.find(
+    (s) => s.typedef?.toLowerCase() === typeName.toLowerCase(),
+  );
   if (structWithTypedef) {
     return structWithTypedef.name;
   }
-  // Otherwise return as-is (it's already a struct name or primitive)
+  // Check if typeName matches a struct name (case-insensitive), return canonical name
+  const structByName = structs.find(
+    (s) => s.name.toLowerCase() === typeName.toLowerCase(),
+  );
+  if (structByName) {
+    return structByName.name;
+  }
+  // Otherwise return as-is (primitive or unknown)
   return typeName;
 }
 
@@ -445,6 +516,39 @@ export function getTypeSize(type: string, structs: CStruct[]): number {
   }
 
   return 0; // Unknown type
+}
+
+/**
+ * Parse a standalone C pointer declaration like "int *ptr", "Node **head", "struct Node *p", "void *generic"
+ * Returns { name, type, pointerLevel } or null on invalid input
+ */
+export function parsePointerDeclaration(
+  declaration: string,
+): Omit<PointerVariable, "id" | "rawDeclaration"> | null {
+  const trimmed = declaration.trim().replace(/;$/, "").trim();
+  if (!trimmed) return null;
+
+  // Pattern: "struct TypeName" followed by stars and name
+  const structMatch = trimmed.match(/^struct\s+(\w+)\s*(\*+)\s*(\w+)$/);
+  if (structMatch) {
+    return {
+      name: structMatch[3],
+      type: structMatch[1],
+      pointerLevel: structMatch[2].length,
+    };
+  }
+
+  // Pattern: "TypeName" followed by stars and name (e.g., "int *ptr", "Node **head", "void *generic")
+  const regularMatch = trimmed.match(/^(\w+)\s*(\*+)\s*(\w+)$/);
+  if (regularMatch) {
+    return {
+      name: regularMatch[3],
+      type: regularMatch[1],
+      pointerLevel: regularMatch[2].length,
+    };
+  }
+
+  return null;
 }
 
 /**

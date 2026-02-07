@@ -25,8 +25,10 @@ import jsPDF from "jspdf";
 import AlertContainer, { showAlert } from "./components/AlertContainer";
 
 import StructNode from "./components/StructNode";
+import PointerNode from "./components/PointerNode";
 import StructEditor from "./components/StructEditor";
 import Sidebar from "./components/Sidebar";
+import PointerMenu from "./components/PointerMenu";
 import Settings from "./components/Settings";
 import Dock from "./components/Dock";
 import HamburgerMenu from "./components/HamburgerMenu";
@@ -34,12 +36,14 @@ import TemplateManager from "./components/TemplateManager";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useCanvasStore } from "./store/canvasStore";
-import { canConnectPointer, resolveTypeName } from "./parser/structParser";
+import { canConnectPointer, canConnectPointerToPointer, canConnectPointerToField, isPrimitiveType, resolveTypeName } from "./parser/structParser";
 import { UI_COLORS } from "./utils/colors";
 import { performSmartLayout } from "./utils/smartLayout";
+import type { PointerInstance } from "./types";
 
 const nodeTypes = {
   structNode: StructNode,
+  pointerNode: PointerNode,
 };
 
 // Edge types removed - using default smoothstep for all connections
@@ -63,6 +67,13 @@ function FlowCanvas() {
     saveHistory,
     history,
     historyIndex,
+    pointerInstances,
+    pointerDefinitions,
+    addPointerInstance,
+    updatePointerInstancePosition,
+    updatePointerInstanceTarget,
+    removePointerInstance,
+    removePointerInstances,
   } = useCanvasStore();
 
   const [showEditor, setShowEditor] = useState(false);
@@ -72,14 +83,25 @@ function FlowCanvas() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [showPointerMenu, setShowPointerMenu] = useState(true);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(() => {
     const saved = localStorage.getItem("snap-to-grid");
     return saved ? JSON.parse(saved) : true; // Default to true
   });
-  const [copiedNodes, setCopiedNodes] = useState<string[]>([]);
-  const [copiedConnections, setCopiedConnections] = useState<
-    Array<{ sourceId: string; targetId: string; fieldName: string }>
-  >([]);
+  const [clipboard, setClipboard] = useState<{
+    nodeIds: string[];
+    structConnections: Array<{
+      sourceId: string;
+      targetId: string;
+      fieldName: string;
+      targetFieldName: string | null;
+    }>;
+    pointerTargets: Array<{
+      pointerId: string;
+      targetId: string;
+      targetFieldName: string | null;
+    }>;
+  } | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<Set<string>>(
     new Set(),
   );
@@ -311,7 +333,7 @@ function FlowCanvas() {
   }, []);
 
   // Convert instances to React Flow nodes
-  const reactFlowNodes: Node[] = instances.map((instance) => {
+  const structNodes: Node[] = instances.map((instance) => {
     const structDef = structDefinitions.find(
       (s) => s.name === instance.structName,
     );
@@ -335,6 +357,30 @@ function FlowCanvas() {
     };
   });
 
+  // Convert pointer instances to React Flow nodes
+  const pointerNodes: Node[] = pointerInstances.map((pi) => {
+    const isHighlighted = highlightedPath.has(pi.id);
+    return {
+      id: pi.id,
+      type: "pointerNode",
+      position: pi.position,
+      data: {
+        pointerInstanceId: pi.id,
+        name: pi.name,
+        type: pi.type,
+        pointerLevel: pi.pointerLevel,
+        targetInstanceId: pi.targetInstanceId,
+        targetFieldName: pi.targetFieldName,
+        color: pi.color,
+      },
+      style: {
+        opacity: highlightedPath.size > 0 && !isHighlighted ? 0.3 : 1,
+      },
+    };
+  });
+
+  const reactFlowNodes: Node[] = [...structNodes, ...pointerNodes];
+
   // Calculate pointer path from a node (for highlighting)
   const calculatePointerPath = useCallback(
     (startNodeId: string): { nodeIds: Set<string>; hasCircular: boolean } => {
@@ -356,7 +402,7 @@ function FlowCanvas() {
         const newPath = new Set(currentPath);
         newPath.add(nodeId);
 
-        // Find all outgoing connections from this node
+        // Find all outgoing struct connections from this node
         const outgoingConnections = connections.filter(
           (conn) => conn.sourceInstanceId === nodeId,
         );
@@ -365,34 +411,51 @@ function FlowCanvas() {
           path.add(conn.targetInstanceId);
           traverse(conn.targetInstanceId, newPath);
         });
+
+        // Also follow pointer instance connections
+        const outgoingPointers = pointerInstances.filter(
+          (pi) => pi.id === nodeId && pi.targetInstanceId,
+        );
+        outgoingPointers.forEach((pi) => {
+          if (pi.targetInstanceId) {
+            path.add(pi.targetInstanceId);
+            traverse(pi.targetInstanceId, newPath);
+          }
+        });
       };
 
       traverse(startNodeId, new Set());
       return { nodeIds: path, hasCircular };
     },
-    [connections],
+    [connections, pointerInstances],
   );
 
   // Convert connections to React Flow edges
-  const reactFlowEdges: Edge[] = connections.map((conn) => {
+  const structEdges: Edge[] = connections.map((conn) => {
     // Check if this edge is part of highlighted path
     const isHighlighted =
       highlightedPath.size > 0 &&
       highlightedPath.has(conn.sourceInstanceId) &&
       highlightedPath.has(conn.targetInstanceId);
 
+    // Determine target handle: field-level or struct-level
+    const targetHandle = conn.targetFieldName
+      ? `field-target-${conn.targetInstanceId}-${conn.targetFieldName}`
+      : `target-left-${conn.targetInstanceId}`;
+
     return {
       id: conn.id,
       source: conn.sourceInstanceId,
       sourceHandle: `${conn.sourceInstanceId}-${conn.sourceFieldName}`,
       target: conn.targetInstanceId,
+      targetHandle,
       type: "smoothstep",
       animated: isHighlighted,
       style: {
         stroke: isHighlighted ? "#3b82f6" : "#374151",
         strokeWidth: isHighlighted ? 4 : 3,
         cursor: "pointer",
-        strokeDasharray: "0",
+        strokeDasharray: "6 3",
         opacity: highlightedPath.size > 0 && !isHighlighted ? 0.2 : 1,
       },
       markerEnd: {
@@ -405,6 +468,53 @@ function FlowCanvas() {
       zIndex: isHighlighted ? 2000 : 1000,
     };
   });
+
+  // Convert pointer instance connections to React Flow edges
+  const pointerEdges: Edge[] = pointerInstances
+    .filter((pi) => pi.targetInstanceId)
+    .map((pi) => {
+      const isHighlighted =
+        highlightedPath.size > 0 &&
+        highlightedPath.has(pi.id) &&
+        highlightedPath.has(pi.targetInstanceId!);
+
+      // Determine target handle: pointer-target if target is a pointer, field-target if field, target-left if struct
+      const targetIsPointer = pointerInstances.some(
+        (p) => p.id === pi.targetInstanceId,
+      );
+      const targetHandle = targetIsPointer
+        ? `pointer-target-${pi.targetInstanceId}`
+        : pi.targetFieldName
+          ? `field-target-${pi.targetInstanceId}-${pi.targetFieldName}`
+          : `target-left-${pi.targetInstanceId}`;
+
+      return {
+        id: `ptr-edge-${pi.id}`,
+        source: pi.id,
+        sourceHandle: `pointer-source-${pi.id}`,
+        target: pi.targetInstanceId!,
+        targetHandle,
+        type: "smoothstep",
+        animated: isHighlighted,
+        style: {
+          stroke: isHighlighted ? "#3b82f6" : "#374151",
+          strokeWidth: isHighlighted ? 4 : 3,
+          strokeDasharray: "6 3",
+          cursor: "pointer",
+          opacity: highlightedPath.size > 0 && !isHighlighted ? 0.2 : 1,
+        },
+        markerEnd: {
+          type: "arrowclosed" as const,
+          color: isHighlighted ? "#3b82f6" : "#374151",
+          width: 16,
+          height: 16,
+        },
+        data: { pointerInstanceId: pi.id },
+        zIndex: isHighlighted ? 2000 : 1000,
+      };
+    });
+
+  const reactFlowEdges: Edge[] = [...structEdges, ...pointerEdges];
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -511,8 +621,19 @@ function FlowCanvas() {
             type: "confirm",
             message: `Delete ${selectedNodes.length} selected node${selectedNodes.length > 1 ? "s" : ""}?`,
             onConfirm: () => {
-              const nodeIds = selectedNodes.map((node) => node.id);
-              removeInstances(nodeIds);
+              const structNodeIds = selectedNodes
+                .filter((n) => n.type !== "pointerNode")
+                .map((n) => n.id);
+              const pointerNodeIds = selectedNodes
+                .filter((n) => n.type === "pointerNode")
+                .map((n) => n.id);
+
+              if (structNodeIds.length > 0) {
+                removeInstances(structNodeIds);
+              }
+              if (pointerNodeIds.length > 0) {
+                removePointerInstances(pointerNodeIds);
+              }
               showAlert({
                 type: "success",
                 message: `Deleted ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
@@ -525,64 +646,121 @@ function FlowCanvas() {
         }
       }
 
+      // Helper: snapshot the clipboard from a set of selected node IDs
+      const snapshotClipboard = (selectedNodeIds: string[]) => {
+        // Struct connections where source is in selection
+        const structConns = connections
+          .filter((conn) => selectedNodeIds.includes(conn.sourceInstanceId))
+          .map((conn) => ({
+            sourceId: conn.sourceInstanceId,
+            targetId: conn.targetInstanceId,
+            fieldName: conn.sourceFieldName,
+            targetFieldName: conn.targetFieldName ?? null,
+          }));
+
+        // Pointer targets where the pointer is in selection
+        const ptrTargets = pointerInstances
+          .filter((pi) => selectedNodeIds.includes(pi.id) && pi.targetInstanceId)
+          .map((pi) => ({
+            pointerId: pi.id,
+            targetId: pi.targetInstanceId!,
+            targetFieldName: pi.targetFieldName,
+          }));
+
+        return { nodeIds: selectedNodeIds, structConnections: structConns, pointerTargets: ptrTargets };
+      };
+
+      // Helper: paste from a clipboard snapshot, returns new node IDs
+      const pasteFromClipboard = (clip: NonNullable<typeof clipboard>, offset: { x: number; y: number }) => {
+        const idMap = new Map<string, string>();
+        const allNewNodeIds: string[] = [];
+
+        // Clone struct instances
+        clip.nodeIds.forEach((nodeId) => {
+          const instance = instances.find((i) => i.id === nodeId);
+          if (instance) {
+            const struct = structDefinitions.find((s) => s.name === instance.structName);
+            if (struct) {
+              const newInstance = addInstance(struct, {
+                x: instance.position.x + offset.x,
+                y: instance.position.y + offset.y,
+              }, undefined);
+              if (newInstance) {
+                idMap.set(nodeId, newInstance.id);
+                allNewNodeIds.push(newInstance.id);
+              }
+            }
+          }
+        });
+
+        // Clone pointer instances
+        clip.nodeIds.forEach((nodeId) => {
+          const ptrInst = pointerInstances.find((pi) => pi.id === nodeId);
+          if (ptrInst) {
+            const newId = `ptrinst-${Date.now()}-${Math.random()}`;
+            addPointerInstance({
+              ...ptrInst,
+              id: newId,
+              position: {
+                x: ptrInst.position.x + offset.x,
+                y: ptrInst.position.y + offset.y,
+              },
+              targetInstanceId: null,
+              targetFieldName: null,
+            });
+            idMap.set(nodeId, newId);
+            allNewNodeIds.push(newId);
+          }
+        });
+
+        // Reconnect after nodes are created
+        setTimeout(() => {
+          // Struct connections: remap source (always copied), remap target if copied else keep original
+          clip.structConnections.forEach((conn) => {
+            const newSourceId = idMap.get(conn.sourceId);
+            const targetId = idMap.get(conn.targetId) ?? conn.targetId;
+            if (newSourceId) {
+              addConnection({
+                sourceInstanceId: newSourceId,
+                sourceFieldName: conn.fieldName,
+                targetInstanceId: targetId,
+                targetFieldName: conn.targetFieldName,
+              });
+            }
+          });
+
+          // Pointer targets: remap pointer (always copied), remap target if copied else keep original
+          clip.pointerTargets.forEach((pt) => {
+            const newPtrId = idMap.get(pt.pointerId);
+            const targetId = idMap.get(pt.targetId) ?? pt.targetId;
+            if (newPtrId) {
+              updatePointerInstanceTarget(newPtrId, targetId, pt.targetFieldName);
+            }
+          });
+
+          // Select only the pasted nodes
+          setTimeout(() => {
+            setNodes((nds) =>
+              nds.map((node) => ({
+                ...node,
+                selected: allNewNodeIds.includes(node.id),
+              })),
+            );
+          }, 10);
+        }, 50);
+
+        return allNewNodeIds;
+      };
+
       // Duplicate nodes (Ctrl+D or Cmd+D)
       if ((event.ctrlKey || event.metaKey) && event.key === "d") {
         const selectedNodes = nodes.filter((node) => node.selected);
         if (selectedNodes.length > 0) {
           event.preventDefault();
           const selectedNodeIds = selectedNodes.map((node) => node.id);
-
-          // Copy and immediately paste
-          setCopiedNodes(selectedNodeIds);
-          const internalConnections = connections.filter(
-            (conn) =>
-              selectedNodeIds.includes(conn.sourceInstanceId) &&
-              selectedNodeIds.includes(conn.targetInstanceId),
-          );
-          setCopiedConnections(
-            internalConnections.map((conn) => ({
-              sourceId: conn.sourceInstanceId,
-              targetId: conn.targetInstanceId,
-              fieldName: conn.sourceFieldName,
-            })),
-          );
-
-          // Paste immediately
-          const instanceIdMap = new Map<string, string>();
-          selectedNodeIds.forEach((nodeId) => {
-            const instance = instances.find((i) => i.id === nodeId);
-            if (instance) {
-              const struct = structDefinitions.find(
-                (s) => s.name === instance.structName,
-              );
-              if (struct) {
-                const newPosition = {
-                  x: instance.position.x + 50,
-                  y: instance.position.y + 50,
-                };
-                const newInstance = addInstance(struct, newPosition, undefined);
-                if (newInstance) {
-                  instanceIdMap.set(nodeId, newInstance.id);
-                }
-              }
-            }
-          });
-
-          // Recreate connections
-          setTimeout(() => {
-            internalConnections.forEach((conn) => {
-              const newSourceId = instanceIdMap.get(conn.sourceInstanceId);
-              const newTargetId = instanceIdMap.get(conn.targetInstanceId);
-              if (newSourceId && newTargetId) {
-                addConnection({
-                  sourceInstanceId: newSourceId,
-                  sourceFieldName: conn.sourceFieldName,
-                  targetInstanceId: newTargetId,
-                });
-              }
-            });
-          }, 50);
-
+          const clip = snapshotClipboard(selectedNodeIds);
+          setClipboard(clip);
+          pasteFromClipboard(clip, { x: 50, y: 50 });
           showAlert({
             type: "success",
             message: `Duplicated ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
@@ -597,95 +775,26 @@ function FlowCanvas() {
         const selectedNodes = nodes.filter((node) => node.selected);
         if (selectedNodes.length > 0) {
           event.preventDefault();
-          const selectedNodeIds = selectedNodes.map((node) => node.id);
-          setCopiedNodes(selectedNodeIds);
-
-          // Copy connections that are between selected nodes only
-          const internalConnections = connections.filter(
-            (conn) =>
-              selectedNodeIds.includes(conn.sourceInstanceId) &&
-              selectedNodeIds.includes(conn.targetInstanceId),
-          );
-
-          setCopiedConnections(
-            internalConnections.map((conn) => ({
-              sourceId: conn.sourceInstanceId,
-              targetId: conn.targetInstanceId,
-              fieldName: conn.sourceFieldName,
-            })),
-          );
+          setClipboard(snapshotClipboard(selectedNodes.map((n) => n.id)));
+          showAlert({
+            type: "success",
+            message: `Copied ${selectedNodes.length} node${selectedNodes.length > 1 ? "s" : ""}`,
+            duration: 1500,
+          });
         }
       }
 
       // Paste nodes (Ctrl+V or Cmd+V)
       if ((event.ctrlKey || event.metaKey) && event.key === "v") {
-        if (copiedNodes.length > 0) {
+        if (clipboard && clipboard.nodeIds.length > 0) {
           event.preventDefault();
-
-          // Get the copied instances
-          const instancesToCopy = instances.filter((inst) =>
-            copiedNodes.includes(inst.id),
-          );
-
-          if (instancesToCopy.length > 0) {
-            // Calculate offset for pasted nodes (shift them down and right)
-            const offset = { x: 50, y: 50 };
-
-            // Track number of instances before pasting
-            const beforeCount = instances.length;
-
-            // Create new instances at offset positions
-            instancesToCopy.forEach((instance) => {
-              const struct = structDefinitions.find(
-                (s) => s.name === instance.structName,
-              );
-              if (struct) {
-                const newPosition = {
-                  x: instance.position.x + offset.x,
-                  y: instance.position.y + offset.y,
-                };
-                addInstance(struct, newPosition, undefined);
-              }
+          const newIds = pasteFromClipboard(clipboard, { x: 50, y: 50 });
+          if (newIds.length > 0) {
+            showAlert({
+              type: "success",
+              message: `Pasted ${newIds.length} node${newIds.length > 1 ? "s" : ""}`,
+              duration: 1500,
             });
-
-            // Recreate connections and select pasted nodes
-            setTimeout(() => {
-              const allInstances = useCanvasStore.getState().instances;
-              const newInstances = allInstances.slice(beforeCount);
-              const newNodeIds = newInstances.map((inst) => inst.id);
-
-              // Create mapping from old instance IDs to new instance IDs
-              const idMap = new Map<string, string>();
-              instancesToCopy.forEach((oldInst, index) => {
-                if (newInstances[index]) {
-                  idMap.set(oldInst.id, newInstances[index].id);
-                }
-              });
-
-              // Recreate connections between pasted nodes
-              copiedConnections.forEach((conn) => {
-                const newSourceId = idMap.get(conn.sourceId);
-                const newTargetId = idMap.get(conn.targetId);
-
-                if (newSourceId && newTargetId) {
-                  addConnection({
-                    sourceInstanceId: newSourceId,
-                    sourceFieldName: conn.fieldName,
-                    targetInstanceId: newTargetId,
-                  });
-                }
-              });
-
-              // Select only the pasted nodes and deselect all others
-              setTimeout(() => {
-                setNodes((nds) =>
-                  nds.map((node) => ({
-                    ...node,
-                    selected: newNodeIds.includes(node.id),
-                  })),
-                );
-              }, 10);
-            }, 50);
           }
         }
       }
@@ -735,10 +844,16 @@ function FlowCanvas() {
     nodes,
     removeInstance,
     removeInstances,
-    copiedNodes,
+    removePointerInstances,
+    clipboard,
     instances,
+    pointerInstances,
+    connections,
     structDefinitions,
     addInstance,
+    addConnection,
+    addPointerInstance,
+    updatePointerInstanceTarget,
     highlightedPath,
     showEditor,
     connectionPopup,
@@ -760,12 +875,12 @@ function FlowCanvas() {
       }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instances, structDefinitions, highlightedPath]);
+  }, [instances, structDefinitions, highlightedPath, pointerInstances]);
 
   useEffect(() => {
     setEdges(reactFlowEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connections, instances, highlightedPath]); // Re-calculate edges when instances move or path changes
+  }, [connections, instances, highlightedPath, pointerInstances]); // Re-calculate edges when instances move or path changes
 
   // Sync positions when nodes are dragged
   const handleNodeDragStop = useCallback(
@@ -774,16 +889,23 @@ function FlowCanvas() {
       if (node.selected) {
         const selectedNodes = allNodes.filter((n) => n.selected);
         selectedNodes.forEach((n) => {
-          updateInstancePosition(n.id, n.position);
+          if (n.type === "pointerNode") {
+            updatePointerInstancePosition(n.id, n.position);
+          } else {
+            updateInstancePosition(n.id, n.position);
+          }
         });
       } else {
-        // Only update the single node that was dragged
-        updateInstancePosition(node.id, node.position);
+        if (node.type === "pointerNode") {
+          updatePointerInstancePosition(node.id, node.position);
+        } else {
+          updateInstancePosition(node.id, node.position);
+        }
       }
       // Save history after drag is complete
       saveHistory();
     },
-    [updateInstancePosition, saveHistory],
+    [updateInstancePosition, updatePointerInstancePosition, saveHistory],
   );
 
   // Handle node click for path highlighting
@@ -874,6 +996,204 @@ function FlowCanvas() {
         return;
       }
 
+      // Check if this is a standalone pointer node connection
+      if (connection.sourceHandle.startsWith("pointer-source-")) {
+        const pointerInstanceId = connection.sourceHandle.replace(
+          "pointer-source-",
+          "",
+        );
+        const pointerInst = pointerInstances.find(
+          (pi) => pi.id === pointerInstanceId,
+        );
+        if (!pointerInst) return;
+
+        // Check if already connected
+        if (pointerInst.targetInstanceId) {
+          showAlert({
+            type: "warning",
+            message:
+              "This pointer is already connected! Right-click the connection arrow to disconnect it first.",
+            duration: 4000,
+          });
+          return;
+        }
+
+        // Determine if target is a pointer or a struct
+        const targetIsPointer = connection.targetHandle?.startsWith("pointer-target-") ?? false;
+
+        if (targetIsPointer) {
+          // --- Pointer-to-pointer connection ---
+          const targetPointerInst = pointerInstances.find(
+            (pi) => pi.id === connection.target,
+          );
+          if (!targetPointerInst) return;
+
+          // Validate with canConnectPointerToPointer
+          if (!canConnectPointerToPointer(
+            pointerInst.type,
+            pointerInst.pointerLevel,
+            targetPointerInst.type,
+            targetPointerInst.pointerLevel,
+            structDefinitions,
+          )) {
+            const stars = (n: number) => "*".repeat(n);
+            showAlert({
+              type: "error",
+              message: `Type mismatch! ${pointerInst.type}${stars(pointerInst.pointerLevel)} cannot point to ${targetPointerInst.type}${stars(targetPointerInst.pointerLevel)}.`,
+              duration: 4000,
+            });
+            return;
+          }
+
+          // Cycle detection: walk forward from target, if we reach source it's a cycle
+          const wouldCycle = (sourceId: string, targetId: string): boolean => {
+            let current: string | null = targetId;
+            const visited = new Set<string>();
+            while (current) {
+              if (current === sourceId) return true;
+              if (visited.has(current)) return false;
+              visited.add(current);
+              const pi = pointerInstances.find((p) => p.id === current);
+              current = pi?.targetInstanceId ?? null;
+            }
+            return false;
+          };
+
+          if (wouldCycle(pointerInst.id, targetPointerInst.id)) {
+            showAlert({
+              type: "error",
+              message: "Cannot create a circular pointer chain!",
+              duration: 4000,
+            });
+            return;
+          }
+
+          updatePointerInstanceTarget(pointerInstanceId, connection.target!);
+          return;
+        }
+
+        // --- Pointer-to-field connection ---
+        const targetIsField = connection.targetHandle?.startsWith("field-target-") ?? false;
+
+        if (targetIsField) {
+          // Struct-type pointers (non-primitive, non-void) should connect to the whole struct,
+          // not a specific field — fall through to pointer-to-struct branch below
+          const isStructTypePointer = !isPrimitiveType(pointerInst.type) && pointerInst.type !== "void";
+
+          if (!isStructTypePointer) {
+            // Parse handle ID: field-target-{instanceId}-{fieldName}
+            // Instance IDs may contain hyphens, so match against known instance IDs
+            const handleSuffix = connection.targetHandle!.replace("field-target-", "");
+            let targetInstanceId: string | null = null;
+            let targetFieldNameParsed: string | null = null;
+
+            for (const inst of instances) {
+              if (handleSuffix.startsWith(inst.id + "-")) {
+                targetInstanceId = inst.id;
+                targetFieldNameParsed = handleSuffix.slice(inst.id.length + 1);
+                break;
+              }
+            }
+
+            if (!targetInstanceId || !targetFieldNameParsed) return;
+
+            const targetInst = instances.find((i) => i.id === targetInstanceId);
+            if (!targetInst) return;
+
+            const targetStruct = structDefinitions.find(
+              (s) => s.name === targetInst.structName,
+            );
+            if (!targetStruct) return;
+
+            const targetField = targetStruct.fields.find(
+              (f) => f.name === targetFieldNameParsed,
+            );
+            if (!targetField) return;
+
+            // Reject multi-level pointers
+            if (pointerInst.pointerLevel >= 2) {
+              const stars = "*".repeat(pointerInst.pointerLevel);
+              showAlert({
+                type: "error",
+                message: `${pointerInst.type}${stars} cannot target a field. Only single-level pointers can target fields.`,
+                duration: 4000,
+              });
+              return;
+            }
+
+            // Validate with canConnectPointerToField
+            if (!canConnectPointerToField(
+              pointerInst.type,
+              pointerInst.pointerLevel,
+              targetField.type,
+              targetField.isPointer,
+              targetField.isArray,
+              structDefinitions,
+            )) {
+              showAlert({
+                type: "error",
+                message: `Type mismatch! ${pointerInst.type}* cannot point to field '${targetField.name}' (${targetField.type}).`,
+                duration: 4000,
+              });
+              return;
+            }
+
+            updatePointerInstanceTarget(pointerInstanceId, targetInstanceId, targetFieldNameParsed);
+            return;
+          }
+          // Struct-type pointers fall through to whole-struct connection below
+        }
+
+        // --- Pointer-to-struct connection (existing behavior) ---
+        const targetInstance = instances.find(
+          (i) => i.id === connection.target,
+        );
+        if (!targetInstance) return;
+
+        // Level >= 2 pointers must point to a pointer first, not directly to a struct
+        if (pointerInst.pointerLevel >= 2) {
+          const stars = "*".repeat(pointerInst.pointerLevel);
+          showAlert({
+            type: "error",
+            message: `${pointerInst.type}${stars} must point to a ${pointerInst.type}${"*".repeat(pointerInst.pointerLevel - 1)} pointer first, not directly to a struct instance.`,
+            duration: 4000,
+          });
+          return;
+        }
+
+        // Primitive-type pointers (non-void) must target a specific field, not whole structs
+        if (isPrimitiveType(pointerInst.type) && pointerInst.type !== "void") {
+          showAlert({
+            type: "error",
+            message: `${pointerInst.type}* must target a specific field. Drop the connection on a field row instead of the struct header.`,
+            duration: 4000,
+          });
+          return;
+        }
+
+        // Type validation
+        const resolvedPointerType = resolveTypeName(
+          pointerInst.type,
+          structDefinitions,
+        );
+        const resolvedTargetType = resolveTypeName(
+          targetInstance.structName,
+          structDefinitions,
+        );
+
+        if (!canConnectPointer(resolvedPointerType, resolvedTargetType)) {
+          showAlert({
+            type: "error",
+            message: `Type mismatch! ${pointerInst.type}${"*".repeat(pointerInst.pointerLevel)} cannot point to struct ${targetInstance.structName}.`,
+            duration: 4000,
+          });
+          return;
+        }
+
+        updatePointerInstanceTarget(pointerInstanceId, connection.target!);
+        return;
+      }
+
       // Extract field name from handle ID (format: instanceId-fieldName or instanceId-fieldName[index])
       const fieldName = connection.sourceHandle.split("-").pop() || "";
 
@@ -894,6 +1214,79 @@ function FlowCanvas() {
           type: "error",
           message: "Only pointer fields can create connections!",
         });
+        return;
+      }
+
+      // Handle struct-field-source -> field-target connection
+      if (connection.targetHandle?.startsWith("field-target-")) {
+        const handleSuffix = connection.targetHandle.replace("field-target-", "");
+        let targetInstId: string | null = null;
+        let targetFldName: string | null = null;
+
+        for (const inst of instances) {
+          if (handleSuffix.startsWith(inst.id + "-")) {
+            targetInstId = inst.id;
+            targetFldName = handleSuffix.slice(inst.id.length + 1);
+            break;
+          }
+        }
+
+        if (!targetInstId || !targetFldName) return;
+
+        const targetInst = instances.find((i) => i.id === targetInstId);
+        if (!targetInst) return;
+
+        const targetStruct = structDefinitions.find(
+          (s) => s.name === targetInst.structName,
+        );
+        if (!targetStruct) return;
+
+        const targetField = targetStruct.fields.find(
+          (f) => f.name === targetFldName,
+        );
+        if (!targetField) return;
+
+        // Validate with canConnectPointerToField
+        if (!canConnectPointerToField(
+          sourceField.type,
+          sourceField.pointerLevel || 1,
+          targetField.type,
+          targetField.isPointer,
+          targetField.isArray,
+          structDefinitions,
+        )) {
+          showAlert({
+            type: "error",
+            message: `Type mismatch! ${sourceField.type}* cannot point to field '${targetField.name}' (${targetField.type}).`,
+            duration: 4000,
+          });
+          return;
+        }
+
+        // Check existing connection
+        const existingFieldConn = connections.find(
+          (conn) =>
+            conn.sourceInstanceId === connection.source &&
+            conn.sourceFieldName === fieldName,
+        );
+
+        if (existingFieldConn) {
+          showAlert({
+            type: "warning",
+            message: `This pointer is already connected! Right-click the connection arrow to delete it first.`,
+            duration: 4000,
+          });
+          return;
+        }
+
+        addConnection({
+          sourceInstanceId: connection.source,
+          sourceFieldName: fieldName,
+          targetInstanceId: targetInstId,
+          targetFieldName: targetFldName,
+        });
+
+        setEdges((eds) => addEdge(connection, eds));
         return;
       }
 
@@ -985,7 +1378,7 @@ function FlowCanvas() {
 
       setEdges((eds) => addEdge(connection, eds));
     },
-    [instances, structDefinitions, addConnection, setEdges, connections],
+    [instances, structDefinitions, addConnection, setEdges, connections, pointerInstances, updatePointerInstanceTarget],
   );
 
   // Handle edge click for highlighting source and target nodes (left-click)
@@ -1003,6 +1396,22 @@ function FlowCanvas() {
   const handleEdgeContextMenu = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       event.preventDefault(); // Prevent default context menu
+
+      // Handle pointer edge disconnection
+      if (edge.data?.pointerInstanceId) {
+        updatePointerInstanceTarget(
+          edge.data.pointerInstanceId as string,
+          null,
+        );
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+        showAlert({
+          type: "success",
+          message: "Pointer disconnected (set to NULL)",
+          duration: 2000,
+        });
+        return;
+      }
+
       if (edge.data?.connectionId) {
         removeConnection(edge.data.connectionId as string);
         // Also remove from React Flow's edge state
@@ -1014,7 +1423,7 @@ function FlowCanvas() {
         });
       }
     },
-    [removeConnection, setEdges],
+    [removeConnection, setEdges, updatePointerInstanceTarget],
   );
 
   // Validate connections - allow source (pointer) to target (struct) connections
@@ -1029,10 +1438,23 @@ function FlowCanvas() {
         return false;
       }
 
-      // Allow connections from source handles to target handles
+      // Allow pointer node source handles to connect to struct, pointer, or field target handles
+      if (connection.sourceHandle.startsWith("pointer-source-")) {
+        if (connection.source === connection.target) return false; // no self-loops
+        // Allow null targetHandle (ConnectionMode.Loose with multiple handles) — handleConnect resolves the target
+        if (!connection.targetHandle) return true;
+        const targetIsStruct = connection.targetHandle.startsWith("target-");
+        const targetIsPointer = connection.targetHandle.startsWith("pointer-target-");
+        const targetIsField = connection.targetHandle.startsWith("field-target-");
+        return targetIsStruct || targetIsPointer || targetIsField;
+      }
+
+      // Allow connections from source handles to target handles or field target handles
       return (
         connection.sourceHandle.includes("-") &&
-        (connection.targetHandle?.startsWith("target-") ?? false)
+        (!connection.targetHandle ||
+         connection.targetHandle.startsWith("target-") ||
+         connection.targetHandle.startsWith("field-target-"))
       );
     },
     [],
@@ -1136,6 +1558,35 @@ function FlowCanvas() {
     (event: React.DragEvent) => {
       event.preventDefault();
 
+      // Check for pointer drop first
+      const pointerId = event.dataTransfer.getData("application/pointer");
+      if (pointerId) {
+        const pointerDef = pointerDefinitions.find((p) => p.id === pointerId);
+        if (!pointerDef) return;
+
+        const position = screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
+        position.x = Math.round(position.x / 20) * 20;
+        position.y = Math.round(position.y / 20) * 20;
+
+        const newInstance: PointerInstance = {
+          id: `ptr-inst-${Date.now()}-${Math.random()}`,
+          pointerVariableId: pointerDef.id,
+          name: pointerDef.name,
+          type: pointerDef.type,
+          pointerLevel: pointerDef.pointerLevel,
+          position,
+          targetInstanceId: null,
+          targetFieldName: null,
+          color: pointerDef.color,
+        };
+
+        addPointerInstance(newInstance);
+        return;
+      }
+
       const structName = event.dataTransfer.getData("application/reactflow");
       if (!structName) return;
 
@@ -1154,7 +1605,7 @@ function FlowCanvas() {
 
       addInstance(struct, position, undefined);
     },
-    [structDefinitions, addInstance, screenToFlowPosition],
+    [structDefinitions, addInstance, screenToFlowPosition, pointerDefinitions, addPointerInstance],
   );
 
   // Handle double-click from sidebar to add instance at center
@@ -1180,21 +1631,23 @@ function FlowCanvas() {
       {/* Sidebar Toggle Button - On the edge of sidebar */}
       <button
         onClick={() => setShowSidebar(!showSidebar)}
-        className={`fixed top-1/2 -translate-y-1/2 z-30 transition-all duration-500 ease-in-out py-3 px-1.5 h-16 w-8 rounded-md rounded-l-none border-2 border-l-0 border-black ${
-          showSidebar ? "left-64" : "left-0"
-        }`}
-        style={{ backgroundColor: UI_COLORS.cyan }}
+        className="fixed top-1/2 -translate-y-1/2 z-30 transition-all duration-500 ease-in-out border-2 border-black rounded-base shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+        style={{
+          backgroundColor: UI_COLORS.cyan,
+          left: showSidebar ? "16.5rem" : "0.5rem",
+          width: "2rem",
+          height: "2.5rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
         title={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
       >
-        <div
-          className={`transition-transform duration-200 ${showSidebar ? "" : "scale-110"}`}
-        >
-          {showSidebar ? (
-            <ChevronLeft size={16} strokeWidth={2.5} />
-          ) : (
-            <ChevronRight size={16} strokeWidth={2.5} />
-          )}
-        </div>
+        {showSidebar ? (
+          <ChevronLeft size={18} strokeWidth={3} />
+        ) : (
+          <ChevronRight size={18} strokeWidth={3} />
+        )}
       </button>
 
       {/* Sidebar */}
@@ -1262,8 +1715,17 @@ function FlowCanvas() {
         />
       </ReactFlow>
 
+      {/* Pointer Menu - Right Side */}
+      <PointerMenu
+        isOpen={showPointerMenu}
+        onToggle={() => setShowPointerMenu(!showPointerMenu)}
+      />
+
       {/* Hamburger Menu - Top Right */}
-      <div className="fixed top-4 right-4 z-10">
+      <div
+        className="fixed top-4 z-10 transition-all duration-500 ease-in-out"
+        style={{ right: showPointerMenu ? "15.5rem" : "1rem" }}
+      >
         <HamburgerMenu
           onOpenSettings={() => setShowSettings(true)}
           onSaveWorkspace={handleSaveWorkspace}
@@ -1779,7 +2241,15 @@ function FlowCanvas() {
                       type: "confirm",
                       message: "Delete this node and all its connections?",
                       onConfirm: () => {
-                        removeInstance(nodeId);
+                        // Check if it's a pointer node or struct node
+                        const isPointer = pointerInstances.some(
+                          (pi) => pi.id === nodeId,
+                        );
+                        if (isPointer) {
+                          removePointerInstance(nodeId);
+                        } else {
+                          removeInstance(nodeId);
+                        }
                         showAlert({
                           type: "success",
                           message: "Node deleted",
@@ -1800,29 +2270,79 @@ function FlowCanvas() {
               <>
                 <button
                   onClick={() => {
-                    if (copiedNodes.length > 0) {
-                      const instancesToCopy = instances.filter((inst) =>
-                        copiedNodes.includes(inst.id),
-                      );
-                      instancesToCopy.forEach((instance) => {
-                        const struct = structDefinitions.find(
-                          (s) => s.name === instance.structName,
-                        );
-                        if (struct) {
-                          const newPosition = {
-                            x: instance.position.x + 50,
-                            y: instance.position.y + 50,
-                          };
-                          addInstance(struct, newPosition, undefined);
+                    if (clipboard && clipboard.nodeIds.length > 0) {
+                      const idMap = new Map<string, string>();
+                      const allNewNodeIds: string[] = [];
+
+                      clipboard.nodeIds.forEach((nodeId) => {
+                        const instance = instances.find((i) => i.id === nodeId);
+                        if (instance) {
+                          const struct = structDefinitions.find((s) => s.name === instance.structName);
+                          if (struct) {
+                            const newInstance = addInstance(struct, {
+                              x: instance.position.x + 50,
+                              y: instance.position.y + 50,
+                            }, undefined);
+                            if (newInstance) {
+                              idMap.set(nodeId, newInstance.id);
+                              allNewNodeIds.push(newInstance.id);
+                            }
+                          }
+                        }
+                        const ptrInst = pointerInstances.find((pi) => pi.id === nodeId);
+                        if (ptrInst) {
+                          const newId = `ptrinst-${Date.now()}-${Math.random()}`;
+                          addPointerInstance({
+                            ...ptrInst,
+                            id: newId,
+                            position: {
+                              x: ptrInst.position.x + 50,
+                              y: ptrInst.position.y + 50,
+                            },
+                            targetInstanceId: null,
+                            targetFieldName: null,
+                          });
+                          idMap.set(nodeId, newId);
+                          allNewNodeIds.push(newId);
                         }
                       });
+
+                      setTimeout(() => {
+                        clipboard.structConnections.forEach((conn) => {
+                          const newSourceId = idMap.get(conn.sourceId);
+                          const targetId = idMap.get(conn.targetId) ?? conn.targetId;
+                          if (newSourceId) {
+                            addConnection({
+                              sourceInstanceId: newSourceId,
+                              sourceFieldName: conn.fieldName,
+                              targetInstanceId: targetId,
+                              targetFieldName: conn.targetFieldName,
+                            });
+                          }
+                        });
+                        clipboard.pointerTargets.forEach((pt) => {
+                          const newPtrId = idMap.get(pt.pointerId);
+                          const targetId = idMap.get(pt.targetId) ?? pt.targetId;
+                          if (newPtrId) {
+                            updatePointerInstanceTarget(newPtrId, targetId, pt.targetFieldName);
+                          }
+                        });
+                        setTimeout(() => {
+                          setNodes((nds) =>
+                            nds.map((node) => ({
+                              ...node,
+                              selected: allNewNodeIds.includes(node.id),
+                            })),
+                          );
+                        }, 10);
+                      }, 50);
                     }
                     setContextMenu(null);
                   }}
                   className="w-full text-left px-4 py-3 text-sm font-heading border-b-2 border-black hover:bg-main hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
-                  disabled={copiedNodes.length === 0}
+                  disabled={!clipboard || clipboard.nodeIds.length === 0}
                 >
-                  Paste Node{copiedNodes.length > 1 ? "s" : ""}
+                  Paste Node{clipboard && clipboard.nodeIds.length > 1 ? "s" : ""}
                 </button>
                 <button
                   onClick={() => {

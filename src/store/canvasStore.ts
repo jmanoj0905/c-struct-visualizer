@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { CStruct, StructInstance, PointerConnection } from "../types";
+import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance } from "../types";
 import { canConnectPointer, resolveTypeName } from "../parser/structParser";
 
 interface HistoryState {
   structDefinitions: CStruct[];
   instances: StructInstance[];
   connections: PointerConnection[];
+  pointerDefinitions?: PointerVariable[];
+  pointerInstances?: PointerInstance[];
 }
 
 interface CanvasState {
@@ -40,6 +42,18 @@ interface CanvasState {
   connections: PointerConnection[];
   addConnection: (connection: Omit<PointerConnection, "id">) => void;
   removeConnection: (id: string) => void;
+
+  // Standalone pointer definitions & instances
+  pointerDefinitions: PointerVariable[];
+  pointerInstances: PointerInstance[];
+  addPointerDefinition: (pointer: PointerVariable) => void;
+  updatePointerDefinition: (id: string, updates: Partial<Pick<PointerVariable, "name" | "type" | "pointerLevel" | "rawDeclaration">>) => void;
+  removePointerDefinition: (id: string) => void;
+  addPointerInstance: (instance: PointerInstance) => void;
+  updatePointerInstancePosition: (id: string, position: { x: number; y: number }) => void;
+  updatePointerInstanceTarget: (id: string, targetInstanceId: string | null, targetFieldName?: string | null) => void;
+  removePointerInstance: (id: string) => void;
+  removePointerInstances: (ids: string[]) => void;
 
   // UI state
   selectedInstanceId: string | null;
@@ -77,6 +91,12 @@ export const useCanvasStore = create<CanvasState>()(
           ),
           instances: JSON.parse(JSON.stringify(state.instances)),
           connections: JSON.parse(JSON.stringify(state.connections)),
+          pointerDefinitions: JSON.parse(
+            JSON.stringify(state.pointerDefinitions),
+          ),
+          pointerInstances: JSON.parse(
+            JSON.stringify(state.pointerInstances),
+          ),
         };
 
         // Remove any redo history after current index
@@ -109,6 +129,12 @@ export const useCanvasStore = create<CanvasState>()(
             ),
             instances: JSON.parse(JSON.stringify(historyState.instances)),
             connections: JSON.parse(JSON.stringify(historyState.connections)),
+            pointerDefinitions: JSON.parse(
+              JSON.stringify(historyState.pointerDefinitions || []),
+            ),
+            pointerInstances: JSON.parse(
+              JSON.stringify(historyState.pointerInstances || []),
+            ),
             historyIndex: newIndex,
           });
         }
@@ -125,6 +151,12 @@ export const useCanvasStore = create<CanvasState>()(
             ),
             instances: JSON.parse(JSON.stringify(historyState.instances)),
             connections: JSON.parse(JSON.stringify(historyState.connections)),
+            pointerDefinitions: JSON.parse(
+              JSON.stringify(historyState.pointerDefinitions || []),
+            ),
+            pointerInstances: JSON.parse(
+              JSON.stringify(historyState.pointerInstances || []),
+            ),
             historyIndex: newIndex,
           });
         }
@@ -197,10 +229,47 @@ export const useCanvasStore = create<CanvasState>()(
             return canConnectPointer(resolvedPointerType, resolvedTargetType);
           });
 
+          // Also invalidate field-targeted connections where the field was removed
+          const validConnectionsWithFields = validConnections.map((conn) => {
+            if (!conn.targetFieldName) return conn;
+            const targetInstance = updatedInstances.find(
+              (i) => i.id === conn.targetInstanceId,
+            );
+            if (!targetInstance) return conn;
+            const targetStruct = updatedStructDefinitions.find(
+              (s) => s.name === targetInstance.structName,
+            );
+            if (!targetStruct) return conn;
+            const fieldExists = targetStruct.fields.some(
+              (f) => f.name === conn.targetFieldName,
+            );
+            if (!fieldExists) return { ...conn, targetFieldName: null };
+            return conn;
+          });
+
+          // Null out targetFieldName on pointer instances whose targeted field was removed
+          const updatedPointerInstances = state.pointerInstances.map((pi) => {
+            if (!pi.targetFieldName || !pi.targetInstanceId) return pi;
+            const targetInstance = updatedInstances.find(
+              (i) => i.id === pi.targetInstanceId,
+            );
+            if (!targetInstance) return pi;
+            const targetStruct = updatedStructDefinitions.find(
+              (s) => s.name === targetInstance.structName,
+            );
+            if (!targetStruct) return pi;
+            const fieldExists = targetStruct.fields.some(
+              (f) => f.name === pi.targetFieldName,
+            );
+            if (!fieldExists) return { ...pi, targetFieldName: null };
+            return pi;
+          });
+
           return {
             structDefinitions: updatedStructDefinitions,
             instances: updatedInstances,
-            connections: validConnections,
+            connections: validConnectionsWithFields,
+            pointerInstances: updatedPointerInstances,
           };
         });
       },
@@ -289,6 +358,12 @@ export const useCanvasStore = create<CanvasState>()(
             ),
             instances: JSON.parse(JSON.stringify(state.instances)),
             connections: JSON.parse(JSON.stringify(state.connections)),
+            pointerDefinitions: JSON.parse(
+              JSON.stringify(state.pointerDefinitions),
+            ),
+            pointerInstances: JSON.parse(
+              JSON.stringify(state.pointerInstances),
+            ),
           };
           const newHistory = state.history.slice(0, state.historyIndex + 1);
           newHistory.push(newHistoryState);
@@ -301,6 +376,12 @@ export const useCanvasStore = create<CanvasState>()(
             connections: state.connections.filter(
               (conn) =>
                 conn.sourceInstanceId !== id && conn.targetInstanceId !== id,
+            ),
+            // Null out pointer instances pointing to the deleted struct instance
+            pointerInstances: state.pointerInstances.map((pi) =>
+              pi.targetInstanceId === id
+                ? { ...pi, targetInstanceId: null, targetFieldName: null }
+                : pi,
             ),
             history: newHistory,
             historyIndex: newHistory.length - 1,
@@ -316,6 +397,12 @@ export const useCanvasStore = create<CanvasState>()(
             ),
             instances: JSON.parse(JSON.stringify(state.instances)),
             connections: JSON.parse(JSON.stringify(state.connections)),
+            pointerDefinitions: JSON.parse(
+              JSON.stringify(state.pointerDefinitions),
+            ),
+            pointerInstances: JSON.parse(
+              JSON.stringify(state.pointerInstances),
+            ),
           };
           const newHistory = state.history.slice(0, state.historyIndex + 1);
           newHistory.push(newHistoryState);
@@ -329,6 +416,12 @@ export const useCanvasStore = create<CanvasState>()(
               (conn) =>
                 !ids.includes(conn.sourceInstanceId) &&
                 !ids.includes(conn.targetInstanceId),
+            ),
+            // Null out pointer instances pointing to deleted struct instances
+            pointerInstances: state.pointerInstances.map((pi) =>
+              pi.targetInstanceId && ids.includes(pi.targetInstanceId)
+                ? { ...pi, targetInstanceId: null, targetFieldName: null }
+                : pi,
             ),
             history: newHistory,
             historyIndex: newHistory.length - 1,
@@ -355,6 +448,105 @@ export const useCanvasStore = create<CanvasState>()(
         }));
       },
 
+      pointerDefinitions: [],
+      pointerInstances: [],
+
+      addPointerDefinition: (pointer) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerDefinitions: [...state.pointerDefinitions, pointer],
+        }));
+      },
+
+      updatePointerDefinition: (id, updates) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerDefinitions: state.pointerDefinitions.map((p) =>
+            p.id === id ? { ...p, ...updates } : p,
+          ),
+          // Also update existing instances that came from this definition
+          pointerInstances: state.pointerInstances.map((pi) =>
+            pi.pointerVariableId === id
+              ? {
+                  ...pi,
+                  ...(updates.name !== undefined ? { name: updates.name } : {}),
+                  ...(updates.type !== undefined ? { type: updates.type } : {}),
+                  ...(updates.pointerLevel !== undefined
+                    ? { pointerLevel: updates.pointerLevel }
+                    : {}),
+                }
+              : pi,
+          ),
+        }));
+      },
+
+      removePointerDefinition: (id) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerDefinitions: state.pointerDefinitions.filter((p) => p.id !== id),
+          // Also remove all instances of this pointer definition
+          pointerInstances: state.pointerInstances.filter(
+            (pi) => pi.pointerVariableId !== id,
+          ),
+        }));
+      },
+
+      addPointerInstance: (instance) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerInstances: [...state.pointerInstances, instance],
+        }));
+      },
+
+      updatePointerInstancePosition: (id, position) => {
+        set((state) => ({
+          pointerInstances: state.pointerInstances.map((pi) =>
+            pi.id === id ? { ...pi, position } : pi,
+          ),
+        }));
+      },
+
+      updatePointerInstanceTarget: (id, targetInstanceId, targetFieldName?) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerInstances: state.pointerInstances.map((pi) =>
+            pi.id === id
+              ? {
+                  ...pi,
+                  targetInstanceId,
+                  targetFieldName: targetInstanceId === null ? null : (targetFieldName ?? null),
+                }
+              : pi,
+          ),
+        }));
+      },
+
+      removePointerInstance: (id) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerInstances: state.pointerInstances
+            .filter((pi) => pi.id !== id)
+            .map((pi) =>
+              pi.targetInstanceId === id
+                ? { ...pi, targetInstanceId: null, targetFieldName: null }
+                : pi,
+            ),
+        }));
+      },
+
+      removePointerInstances: (ids) => {
+        get().saveHistory();
+        set((state) => ({
+          pointerInstances: state.pointerInstances
+            .filter((pi) => !ids.includes(pi.id))
+            .map((pi) =>
+              pi.targetInstanceId && ids.includes(pi.targetInstanceId)
+                ? { ...pi, targetInstanceId: null, targetFieldName: null }
+                : pi,
+            ),
+        }));
+      },
+
       selectedInstanceId: null,
 
       setSelectedInstance: (id) => set({ selectedInstanceId: id }),
@@ -363,9 +555,11 @@ export const useCanvasStore = create<CanvasState>()(
         set((state) => ({
           instances: [],
           connections: [],
+          pointerInstances: [],
           selectedInstanceId: null,
-          // Keep struct definitions, only clear workspace
+          // Keep struct definitions and pointer definitions, only clear workspace
           structDefinitions: state.structDefinitions,
+          pointerDefinitions: state.pointerDefinitions,
         })),
 
       exportWorkspace: () => {
@@ -375,7 +569,9 @@ export const useCanvasStore = create<CanvasState>()(
             structDefinitions: state.structDefinitions,
             instances: state.instances,
             connections: state.connections,
-            version: "1.0",
+            pointerDefinitions: state.pointerDefinitions,
+            pointerInstances: state.pointerInstances,
+            version: "1.2",
           },
           null,
           2,
@@ -385,10 +581,21 @@ export const useCanvasStore = create<CanvasState>()(
       importWorkspace: (data: string) => {
         try {
           const parsed = JSON.parse(data);
+
+          // Migrate old pointer instances: default missing targetFieldName to null
+          const migratedPointerInstances = (parsed.pointerInstances || []).map(
+            (pi: Record<string, unknown>) => ({
+              ...pi,
+              targetFieldName: pi.targetFieldName ?? null,
+            }),
+          );
+
           set({
             structDefinitions: parsed.structDefinitions || [],
             instances: parsed.instances || [],
             connections: parsed.connections || [],
+            pointerDefinitions: parsed.pointerDefinitions || [],
+            pointerInstances: migratedPointerInstances,
             selectedInstanceId: null,
           });
         } catch (error) {

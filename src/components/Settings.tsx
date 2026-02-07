@@ -190,7 +190,7 @@ const Settings = ({
                       Interactive data structure visualization tool
                     </div>
                     <div className="text-sm font-heading pt-3 border-t-2 border-black">
-                      Made by <span className="text-purple-600">Manoj</span>
+                      Made by <a href="https://jmanoj.pages.dev" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline cursor-pointer">Manoj</a>
                     </div>
                   </div>
                 </div>
@@ -198,7 +198,7 @@ const Settings = ({
 
               {/* Version */}
               <div className="text-center">
-                <div className="text-xs font-heading opacity-50">v1.3.0</div>
+                <div className="text-xs font-heading opacity-50">v1.4.0</div>
               </div>
             </>
           )}

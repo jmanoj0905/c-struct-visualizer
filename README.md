@@ -2,7 +2,7 @@
 
 An interactive, beginner-friendly visual tool for learning C structs, pointers, and data structures. Built with React, TypeScript, and React Flow, featuring a modern neobrutalist design aesthetic.
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
@@ -279,7 +279,25 @@ Contributions are welcome! Please see our contributing guidelines:
 
 ## Changelog
 
-### Version 1.3.0 (Latest)
+### Version 1.4.0 (Latest)
+
+**New Features:**
+- **Pointer-to-Field Targeting**: Primitive-type pointers (`int*`, `char*`, etc.) can now target specific fields inside struct instances
+  - Drop `int*` on an `int` field to connect with `&Instance.fieldName` notation
+  - `void*` can target any non-pointer, non-array field or a whole struct
+  - Struct-type pointers (`Node*`) continue to target whole structs
+  - Per-field target handles (small black squares) on the left edge of eligible fields
+- **Standalone Pointer Variables**: Declare and visualize standalone pointers (`int *ptr`, `Node *head`, `void *generic`) separate from structs
+- **Pointer-to-Pointer Chains**: Multi-level pointers (`int**`, `Node***`) can chain to lower-level pointers with full type validation
+- **Case-Insensitive Type Matching**: Pointer type names are matched case-insensitively against struct names (e.g., `node*` connects to `Node`)
+
+**Improvements:**
+- **Refined Handle Design**: Struct cards use square handles, pointer cards use circle handles, all consistently sized
+- **Dashed Arrow Style**: All connection arrows now use a uniform dashed style for clarity
+- **Workspace Version 1.2**: New workspace format with backward-compatible migration for older saves
+- **Field Removal Safety**: Connections targeting a removed field are automatically invalidated on struct edit
+
+### Version 1.3.0
 
 **New Features:**
 - **Magic Wand Auto-Layout**: Auto-layout button now uses a magic wand icon
@@ -332,8 +350,8 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Version 1.3.0** - Enhanced templates, zero-overlap auto-layout, and improved UX
+**Version 1.4.0** - Pointer-to-field targeting, standalone pointers, and refined UX
 
 **Live Demo**: [structviz.pages.dev](https://structviz.pages.dev/)
 
-Made with ❤️ by [Manoj](https://github.com/jmanoj0905)
+Made with ❤️ by [Manoj]

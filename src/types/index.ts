@@ -39,4 +39,26 @@ export interface PointerConnection {
   sourceInstanceId: string;
   sourceFieldName: string;
   targetInstanceId: string;
+  targetFieldName?: string | null;
+}
+
+export interface PointerVariable {
+  id: string;
+  name: string;
+  type: string;
+  pointerLevel: number;
+  rawDeclaration: string;
+  color: string;
+}
+
+export interface PointerInstance {
+  id: string;
+  pointerVariableId: string;
+  name: string;
+  type: string;
+  pointerLevel: number;
+  position: { x: number; y: number };
+  targetInstanceId: string | null;
+  targetFieldName: string | null;
+  color: string;
 }

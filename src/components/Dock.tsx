@@ -38,7 +38,7 @@ const Dock = ({
         {/* Selection Mode Toggle */}
         <button
           onClick={onToggleSelection}
-          className="p-2 border-2 border-black rounded-base hover:translate-x-1 hover:translate-y-1 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
+          className="p-2 border-2 border-black rounded-base hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-[transform,box-shadow] duration-75 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
           style={{
             backgroundColor: isSelecting ? UI_COLORS.indigo : UI_COLORS.yellow,
           }}
@@ -59,7 +59,7 @@ const Dock = ({
         <button
           onClick={onUndo}
           disabled={undoDisabled}
-          className="p-2 border-2 border-black rounded-base hover:translate-x-1 hover:translate-y-1 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+          className="p-2 border-2 border-black rounded-base hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-[transform,box-shadow] duration-75 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
           style={{ backgroundColor: UI_COLORS.green }}
           title="Undo (Ctrl/Cmd+Z)"
         >
@@ -70,7 +70,7 @@ const Dock = ({
         <button
           onClick={onRedo}
           disabled={redoDisabled}
-          className="p-2 border-2 border-black rounded-base hover:translate-x-1 hover:translate-y-1 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+          className="p-2 border-2 border-black rounded-base hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-[transform,box-shadow] duration-75 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
           style={{ backgroundColor: UI_COLORS.orange }}
           title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+U)"
         >
@@ -80,7 +80,7 @@ const Dock = ({
         {/* Fit to Window */}
         <button
           onClick={onFitView}
-          className="p-2 border-2 border-black rounded-base hover:translate-x-1 hover:translate-y-1 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
+          className="p-2 border-2 border-black rounded-base hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-[transform,box-shadow] duration-75 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
           style={{ backgroundColor: UI_COLORS.cyan }}
           title="Fit to window"
         >
@@ -90,7 +90,7 @@ const Dock = ({
         {/* Auto Layout */}
         <button
           onClick={onAutoLayout}
-          className="p-2 border-2 border-black rounded-base hover:translate-x-1 hover:translate-y-1 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
+          className="p-2 border-2 border-black rounded-base hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-[transform,box-shadow] duration-75 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
           style={{ backgroundColor: UI_COLORS.indigo }}
           title="Auto arrange layout"
         >
@@ -103,7 +103,7 @@ const Dock = ({
         {/* Clear Workspace */}
         <button
           onClick={onClearWorkspace}
-          className="p-2 border-2 border-black rounded-base hover:translate-x-1 hover:translate-y-1 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
+          className="p-2 border-2 border-black rounded-base hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-[transform,box-shadow] duration-75 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
           style={{ backgroundColor: UI_COLORS.red }}
           title="Clear workspace"
         >
