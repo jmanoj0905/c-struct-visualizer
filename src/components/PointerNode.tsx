@@ -12,6 +12,7 @@ interface PointerNodeData {
   targetInstanceId: string | null;
   targetFieldName: string | null;
   color: string;
+  readOnly?: boolean;
 }
 
 function PointerNode({
@@ -61,14 +62,16 @@ function PointerNode({
           {data.type}
           {stars}
         </div>
-        <button
-          onClick={() => removePointerInstance(data.pointerInstanceId)}
-          className="opacity-0 group-hover/card:opacity-100 size-6 border-2 border-black rounded-base inline-flex items-center justify-center transition"
-          style={{ backgroundColor: UI_COLORS.redDelete }}
-          title="Delete"
-        >
-          <Trash2 size={12} strokeWidth={2.5} />
-        </button>
+        {!data.readOnly && (
+          <button
+            onClick={() => removePointerInstance(data.pointerInstanceId)}
+            className="opacity-0 group-hover/card:opacity-100 size-6 border-2 border-black rounded-base inline-flex items-center justify-center transition"
+            style={{ backgroundColor: UI_COLORS.redDelete }}
+            title="Delete"
+          >
+            <Trash2 size={12} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
 
       {/* Body */}

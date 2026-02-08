@@ -2,7 +2,7 @@
 
 An interactive, beginner-friendly visual tool for learning C structs, pointers, and data structures. Built with React, TypeScript, and React Flow, featuring a modern neobrutalist design aesthetic.
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
@@ -279,7 +279,20 @@ Contributions are welcome! Please see our contributing guidelines:
 
 ## Changelog
 
-### Version 1.4.0 (Latest)
+### Version 2.0.0 (Latest)
+
+**New Features:**
+- **Code Visualizer Mode**: Write C code and step through execution to visualize heap allocations, stack variables, and pointer connections in real time
+- **Topology-Aware Auto-Layout**: Linked lists chain left-to-right, binary trees fan out in layers, cyclic structures arrange in diamond shapes
+- **Run/Stop Controls**: Play button to run code, red stop button to halt execution and return to editing
+- **Auto Fit-to-View**: Heap canvas automatically zooms to fit when new instances appear
+
+**Improvements:**
+- **Redesigned Panel Layout**: stdin/stdout stacked vertically alongside stack view for better space usage
+- **Editable Code During Trace**: Code editor remains editable after running a trace
+- **Minimalist Sidebar**: Cleaner headers without icons for Structs and Pointers panels
+
+### Version 1.4.0
 
 **New Features:**
 - **Pointer-to-Field Targeting**: Primitive-type pointers (`int*`, `char*`, etc.) can now target specific fields inside struct instances
@@ -349,7 +362,7 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Version 1.4.0** - Pointer-to-field targeting, standalone pointers, and refined UX
+**Version 2.0.0** - Code visualizer, topology-aware layout, and redesigned UI
 
 **Live Demo**: [structviz.pages.dev](https://structviz.pages.dev/)
 

@@ -65,42 +65,57 @@ const DEFAULT_CONFIG: LayoutConfig = {
 /**
  * Simple layout: hierarchical for linear, circular for cycles
  */
+/**
+ * Compute layout positions for all instances based on connection topology.
+ * Returns a Map from instance ID to {x, y} position.
+ */
+export function computeLayout(
+  instances: StructInstance[],
+  connections: PointerConnection[],
+): Map<string, { x: number; y: number }> {
+  const result = new Map<string, { x: number; y: number }>();
+  if (instances.length === 0) return result;
+
+  const components = findPhysicsComponents(instances, connections);
+
+  let globalOffsetX = 0;
+  const componentGap = 600;
+
+  for (const component of components) {
+    const positions = layoutComponentSimple(
+      component,
+      instances,
+      connections,
+      [],
+    );
+
+    positions.forEach((pos, nodeId) => {
+      result.set(nodeId, {
+        x: pos.x + globalOffsetX,
+        y: pos.y,
+      });
+    });
+
+    const componentWidth = calculateComponentWidth(positions);
+    globalOffsetX += componentWidth + componentGap;
+  }
+
+  return result;
+}
+
 export async function performSmartLayout(
   instances: StructInstance[],
   connections: PointerConnection[],
-  structDefinitions: CStruct[],
+  _structDefinitions: CStruct[],
   updateInstancePosition: (id: string, pos: { x: number; y: number }) => void,
 ): Promise<void> {
   if (instances.length === 0) return;
 
   try {
-    // Find connected components
-    const components = findPhysicsComponents(instances, connections);
-
-    // Layout each component separately
-    let globalOffsetX = 0;
-    const componentGap = 600;
-
-    for (const component of components) {
-      const positions = layoutComponentSimple(
-        component,
-        instances,
-        connections,
-        structDefinitions,
-      );
-
-      // Apply positions with global offset
-      positions.forEach((pos, nodeId) => {
-        updateInstancePosition(nodeId, {
-          x: pos.x + globalOffsetX,
-          y: pos.y,
-        });
-      });
-
-      // Calculate component width for next offset
-      const componentWidth = calculateComponentWidth(positions);
-      globalOffsetX += componentWidth + componentGap;
-    }
+    const positions = computeLayout(instances, connections);
+    positions.forEach((pos, nodeId) => {
+      updateInstancePosition(nodeId, pos);
+    });
   } catch (error) {
     console.error("Layout error:", error);
     throw error;

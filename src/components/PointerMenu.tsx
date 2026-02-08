@@ -5,7 +5,6 @@ import {
   GripVertical,
   X,
   Plus,
-  MousePointer2,
   Edit2,
   Check,
 } from "lucide-react";
@@ -184,11 +183,6 @@ const PointerMenu = ({ isOpen, onToggle }: PointerMenuProps) => {
             className="p-3 border-b-4 border-black flex items-center gap-2"
             style={{ backgroundColor: UI_COLORS.indigo }}
           >
-            <MousePointer2
-              size={20}
-              strokeWidth={2.5}
-              className="text-black"
-            />
             <h2 className="text-base font-heading tracking-wider uppercase">
               Pointers
             </h2>

@@ -7,7 +7,6 @@ import {
   Network,
   Layers,
   Plus,
-  Box,
 } from "lucide-react";
 import { useCanvasStore } from "../store/canvasStore";
 import type { CStruct } from "../types";
@@ -443,13 +442,9 @@ const Sidebar = ({
         className="p-3 border-b-4 border-black flex items-center justify-between gap-2"
         style={{ backgroundColor: UI_COLORS.cyan }}
       >
-        {/* Logo */}
-        <div className="flex items-center gap-2">
-          <Box size={24} strokeWidth={2.5} className="text-black" />
-          <h1 className="text-lg font-heading tracking-wider uppercase">
-            C Struct
-          </h1>
-        </div>
+        <h1 className="text-lg font-heading tracking-wider uppercase">
+          Structs
+        </h1>
 
         {/* New Struct Button */}
         <button

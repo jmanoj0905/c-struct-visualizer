@@ -34,6 +34,7 @@ import Settings from "./components/Settings";
 import Dock from "./components/Dock";
 import HamburgerMenu from "./components/HamburgerMenu";
 import TemplateManager from "./components/TemplateManager";
+import CodeVisualizerLayout from "./components/visualizer/CodeVisualizerLayout";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useCanvasStore } from "./store/canvasStore";
@@ -76,6 +77,7 @@ function FlowCanvas() {
     removePointerInstance,
     removePointerInstances,
     activeWorkspaceId,
+    workspaceTabs,
   } = useCanvasStore();
 
   const [showEditor, setShowEditor] = useState(false);
@@ -1631,6 +1633,18 @@ function FlowCanvas() {
     },
     [structDefinitions, addInstance],
   );
+
+  const activeTab = workspaceTabs.find(t => t.id === activeWorkspaceId);
+  const isVisualizerMode = activeTab?.mode === "visualizer";
+
+  if (isVisualizerMode) {
+    return (
+      <>
+        <WorkspaceTabBar />
+        <CodeVisualizerLayout />
+      </>
+    );
+  }
 
   return (
     <>

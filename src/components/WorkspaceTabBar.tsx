@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Plus, Copy, Edit2, XCircle, ChevronRight } from "lucide-react";
+import { X, Plus, Copy, Edit2, XCircle, ChevronRight, Code } from "lucide-react";
 import { useCanvasStore } from "../store/canvasStore";
 import { UI_COLORS } from "../utils/colors";
 import { showAlert } from "./AlertContainer";
+import ModeSelectionDialog from "./ModeSelectionDialog";
 
 const WS_KEY = "c-struct-workspace-";
 
@@ -11,7 +12,6 @@ const WorkspaceTabBar = () => {
     workspaceTabs,
     activeWorkspaceId,
     switchWorkspace,
-    addWorkspace,
     removeWorkspace,
     renameWorkspace,
     duplicateWorkspace,
@@ -33,6 +33,7 @@ const WorkspaceTabBar = () => {
   } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
+  const [showModeDialog, setShowModeDialog] = useState(false);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +77,21 @@ const WorkspaceTabBar = () => {
   };
 
   const tabHasContent = (tabId: string): boolean => {
+    const tab = workspaceTabs.find((t) => t.id === tabId);
+
+    // Visualizer tabs: check if code has been modified from sample
+    if (tab?.mode === "visualizer") {
+      try {
+        const raw = localStorage.getItem("c-struct-vis-ws-" + tabId);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        return (data.code?.length ?? 0) > 50; // Has non-trivial code
+      } catch {
+        return false;
+      }
+    }
+
+    // Free mode tabs
     if (tabId === activeWorkspaceId) {
       return (
         instances.length > 0 ||
@@ -181,6 +197,9 @@ const WorkspaceTabBar = () => {
                   isActive ? "bg-white" : "hover:bg-gray-50"
                 } ${isDragOver ? "border-l-[3px] border-l-blue-500" : ""}`}
               >
+                {tab.mode === "visualizer" && (
+                  <Code size={10} className="flex-shrink-0 text-emerald-600" />
+                )}
                 {isRenaming ? (
                   <input
                     ref={renameInputRef}
@@ -228,7 +247,7 @@ const WorkspaceTabBar = () => {
 
           {/* Inline add tab button */}
           <button
-            onClick={addWorkspace}
+            onClick={() => setShowModeDialog(true)}
             className="w-7 h-full flex-shrink-0 flex items-center justify-center hover:bg-gray-100 transition-colors"
             title="New workspace"
           >
@@ -323,6 +342,11 @@ const WorkspaceTabBar = () => {
           </button>
         </div>
       )}
+
+      <ModeSelectionDialog
+        isOpen={showModeDialog}
+        onClose={() => setShowModeDialog(false)}
+      />
     </>
   );
 };

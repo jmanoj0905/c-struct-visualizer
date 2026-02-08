@@ -198,7 +198,7 @@ const Settings = ({
 
               {/* Version */}
               <div className="text-center">
-                <div className="text-xs font-heading opacity-50">v1.4.0</div>
+                <div className="text-xs font-heading opacity-50">v2.0.0</div>
               </div>
             </>
           )}

@@ -1,9 +1,12 @@
 // Core type definitions for the C struct visualizer
 
+export type WorkspaceMode = "free" | "visualizer";
+
 export interface WorkspaceTab {
   id: string;
   name: string;
   createdAt: number;
+  mode: WorkspaceMode;
 }
 
 export type CPrimitiveType =

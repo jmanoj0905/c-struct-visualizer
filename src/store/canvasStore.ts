@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance, WorkspaceTab } from "../types";
+import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance, WorkspaceTab, WorkspaceMode } from "../types";
 import { canConnectPointer, resolveTypeName } from "../parser/structParser";
 
 export interface HistoryState {
@@ -74,7 +74,7 @@ interface CanvasState {
   // Workspace tabs
   workspaceTabs: WorkspaceTab[];
   activeWorkspaceId: string;
-  addWorkspace: () => void;
+  addWorkspace: (mode?: WorkspaceMode) => void;
   removeWorkspace: (id: string) => void;
   renameWorkspace: (id: string, name: string) => void;
   switchWorkspace: (id: string) => void;
@@ -154,7 +154,7 @@ export const useCanvasStore = create<CanvasState>()(
       historyIndex: -1,
 
       // Workspace tabs - defaults
-      workspaceTabs: [{ id: "ws-default", name: "Workspace 1", createdAt: Date.now() }],
+      workspaceTabs: [{ id: "ws-default", name: "Workspace 1", createdAt: Date.now(), mode: "free" as WorkspaceMode }],
       activeWorkspaceId: "ws-default",
 
       saveHistory: () => {
@@ -704,17 +704,22 @@ export const useCanvasStore = create<CanvasState>()(
         });
       },
 
-      addWorkspace: () => {
+      addWorkspace: (mode?: WorkspaceMode) => {
         const state = get();
+        const wsMode = mode || "free";
 
         // Save current workspace snapshot
         saveSnapshot(state.activeWorkspaceId, state);
 
         const newId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const defaultName = wsMode === "visualizer"
+          ? `Visualizer ${state.workspaceTabs.filter(t => t.mode === "visualizer").length + 1}`
+          : `Workspace ${state.workspaceTabs.filter(t => t.mode !== "visualizer").length + 1}`;
         const newTab: WorkspaceTab = {
           id: newId,
-          name: `Workspace ${state.workspaceTabs.length + 1}`,
+          name: defaultName,
           createdAt: Date.now(),
+          mode: wsMode,
         };
         const empty = emptySnapshot();
 
@@ -742,6 +747,8 @@ export const useCanvasStore = create<CanvasState>()(
 
         // Delete snapshot from localStorage
         deleteSnapshot(id);
+        // Also clean up visualizer state if it was a visualizer workspace
+        localStorage.removeItem("c-struct-vis-ws-" + id);
 
         const remainingTabs = state.workspaceTabs.filter((t) => t.id !== id);
 
@@ -810,6 +817,7 @@ export const useCanvasStore = create<CanvasState>()(
           id: newId,
           name: `${sourceTab.name} (copy)`,
           createdAt: Date.now(),
+          mode: sourceTab.mode || "free",
         };
 
         // Save clone to localStorage
@@ -924,8 +932,15 @@ export const useCanvasStore = create<CanvasState>()(
       onRehydrateStorage: () => (state) => {
         if (state && (!state.workspaceTabs || state.workspaceTabs.length === 0)) {
           const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          state.workspaceTabs = [{ id, name: "Workspace 1", createdAt: Date.now() }];
+          state.workspaceTabs = [{ id, name: "Workspace 1", createdAt: Date.now(), mode: "free" }];
           state.activeWorkspaceId = id;
+        }
+        // Migrate: add mode field to existing tabs that don't have it
+        if (state && state.workspaceTabs) {
+          state.workspaceTabs = state.workspaceTabs.map(t => ({
+            ...t,
+            mode: t.mode || "free",
+          }));
         }
       },
     },

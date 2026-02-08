@@ -20,6 +20,10 @@ interface StructNodeData {
     pointerLevel?: number;
     isFunctionPointer?: boolean;
   }>;
+  fieldValues?: Record<string, unknown>;
+  connectedFields?: string[];
+  pointerFieldAddresses?: Record<string, string>;
+  readOnly?: boolean;
 }
 
 function StructNode({ data, selected }: { data: StructNodeData; selected?: boolean }) {
@@ -31,7 +35,10 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
     connections,
     structDefinitions,
   } = useCanvasStore();
-  const instance = instances.find((i) => i.id === data.instanceId);
+  const readOnly = data.readOnly === true;
+  const instance = readOnly ? null : instances.find((i) => i.id === data.instanceId);
+  // In read-only mode (visualizer), field values come from data.fieldValues
+  const resolvedFieldValues = readOnly ? (data.fieldValues || {}) : (instance?.fieldValues || {});
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(data.instanceName);
 
@@ -41,6 +48,10 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
 
   // Helper to check if a pointer is connected
   const isPointerConnected = (fieldName: string) => {
+    // In read-only mode, use the connectedFields passed from the visualizer
+    if (readOnly) {
+      return (data.connectedFields || []).includes(fieldName);
+    }
     return connections.some(
       (conn) =>
         conn.sourceInstanceId === data.instanceId &&
@@ -100,7 +111,7 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
           <div className="text-xs font-heading font-mono">
             {data.structName}
           </div>
-          {isEditingName ? (
+          {!readOnly && isEditingName ? (
             <div className="flex items-center gap-2">
               <Input
                 type="text"
@@ -127,32 +138,36 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
               <div className="font-mono text-sm font-heading">
                 {data.instanceName}
               </div>
-              <Button
-                size="icon"
-                variant="noShadow"
-                onClick={handleNameEdit}
-                className="size-7 opacity-0 group-hover:opacity-100"
-                title="Edit"
-              >
-                <Edit2 size={12} strokeWidth={2.5} />
-              </Button>
+              {!readOnly && (
+                <Button
+                  size="icon"
+                  variant="noShadow"
+                  onClick={handleNameEdit}
+                  className="size-7 opacity-0 group-hover:opacity-100"
+                  title="Edit"
+                >
+                  <Edit2 size={12} strokeWidth={2.5} />
+                </Button>
+              )}
             </div>
           )}
         </div>
-        <button
-          onClick={handleDelete}
-          className="opacity-0 group-hover/card:opacity-100 size-8 border-2 border-black rounded-base inline-flex items-center justify-center transition"
-          style={{ backgroundColor: UI_COLORS.redDelete }}
-          title="Delete"
-        >
-          <Trash2 size={14} strokeWidth={2.5} />
-        </button>
+        {!readOnly && (
+          <button
+            onClick={handleDelete}
+            className="opacity-0 group-hover/card:opacity-100 size-8 border-2 border-black rounded-base inline-flex items-center justify-center transition"
+            style={{ backgroundColor: UI_COLORS.redDelete }}
+            title="Delete"
+          >
+            <Trash2 size={14} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
 
       {/* Fields */}
       <div className="p-2 space-y-2">
         {data.fields.map((field) => {
-          const fieldValue = instance?.fieldValues[field.name];
+          const fieldValue = resolvedFieldValues[field.name];
           const fieldValueStr =
             typeof fieldValue === "string" ? fieldValue : "";
           const handleId = `${data.instanceId}-${field.name}`;
@@ -223,25 +238,31 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
                   {!field.isPointer &&
                     !field.isArray &&
                     field.type !== "bool" && (
-                      <Input
-                        type={
-                          field.type === "int" ||
-                          field.type === "float" ||
-                          field.type === "double"
-                            ? "number"
-                            : "text"
-                        }
-                        value={fieldValueStr}
-                        onChange={(e) =>
-                          updateFieldValue(
-                            data.instanceId,
-                            field.name,
-                            e.target.value,
-                          )
-                        }
-                        placeholder={`${field.type} value`}
-                        className="w-full h-9 text-sm font-base"
-                      />
+                      readOnly ? (
+                        <div className="font-mono text-sm text-gray-700 px-2 py-1">
+                          {fieldValueStr || <span className="text-gray-400">-</span>}
+                        </div>
+                      ) : (
+                        <Input
+                          type={
+                            field.type === "int" ||
+                            field.type === "float" ||
+                            field.type === "double"
+                              ? "number"
+                              : "text"
+                          }
+                          value={fieldValueStr}
+                          onChange={(e) =>
+                            updateFieldValue(
+                              data.instanceId,
+                              field.name,
+                              e.target.value,
+                            )
+                          }
+                          placeholder={`${field.type} value`}
+                          className="w-full h-9 text-sm font-base"
+                        />
+                      )
                     )}
 
                   {/* Checkbox for bool type */}
@@ -378,7 +399,9 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
                           style={{ backgroundColor: UI_COLORS.green }}
                         >
                           <span className="inline-block w-2.5 h-2.5 bg-black rounded-none"></span>
-                          CONNECTED
+                          {readOnly && data.pointerFieldAddresses?.[field.name]
+                            ? data.pointerFieldAddresses[field.name]
+                            : "CONNECTED"}
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 text-xs text-gray-500 font-base font-mono">
