@@ -69,7 +69,7 @@ const TemplateManager = ({ isOpen, onClose }: TemplateManagerProps) => {
             addInstance(
               { name: inst.structName, typedef: "", fields: [] },
               inst.position,
-              inst.label,
+              inst.instanceName,
             );
           });
 
@@ -144,7 +144,7 @@ const TemplateManager = ({ isOpen, onClose }: TemplateManagerProps) => {
           id: inst.id,
           structName: inst.structName,
           position: inst.position,
-          label: inst.label,
+          instanceName: inst.instanceName,
         })),
         connections: connections.map((conn) => ({
           sourceInstanceId: conn.sourceInstanceId,
