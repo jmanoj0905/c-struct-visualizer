@@ -7,6 +7,7 @@ import {
   Network,
   Layers,
   Plus,
+  Box,
 } from "lucide-react";
 import { useCanvasStore } from "../store/canvasStore";
 import type { CStruct } from "../types";
@@ -153,6 +154,126 @@ export const templates = {
       },
     ] as CStruct[],
   },
+  // --- C++ Templates ---
+  cppLinkedList: {
+    name: "C++ Linked List",
+    description: "Class-based singly linked list",
+    icon: Box,
+    structs: [
+      {
+        name: "Node",
+        fields: [
+          { name: "data", type: "int", isPointer: false, isArray: false, accessLevel: "public" as const },
+          { name: "next", type: "Node", isPointer: true, isArray: false, accessLevel: "public" as const },
+        ],
+        isClass: true,
+        accessDefault: "private" as const,
+        methods: [
+          { name: "Node", returnType: "void", parameters: [{ name: "d", type: "int" }], accessLevel: "public" as const, isVirtual: false, isConst: false, isStatic: false, isPureVirtual: false, isConstructor: true, isDestructor: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  cppBinaryTree: {
+    name: "C++ Binary Tree",
+    description: "Class with virtual methods",
+    icon: Box,
+    structs: [
+      {
+        name: "TreeNode",
+        fields: [
+          { name: "val", type: "int", isPointer: false, isArray: false, accessLevel: "public" as const },
+          { name: "left", type: "TreeNode", isPointer: true, isArray: false, accessLevel: "public" as const },
+          { name: "right", type: "TreeNode", isPointer: true, isArray: false, accessLevel: "public" as const },
+        ],
+        isClass: true,
+        accessDefault: "private" as const,
+        methods: [
+          { name: "TreeNode", returnType: "void", parameters: [{ name: "v", type: "int" }], accessLevel: "public" as const, isVirtual: false, isConst: false, isStatic: false, isPureVirtual: false, isConstructor: true, isDestructor: false },
+          { name: "print", returnType: "void", parameters: [], accessLevel: "public" as const, isVirtual: true, isConst: true, isStatic: false, isPureVirtual: false, isConstructor: false, isDestructor: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  cppInheritance: {
+    name: "C++ Inheritance",
+    description: "Base + Derived class",
+    icon: Box,
+    structs: [
+      {
+        name: "Shape",
+        fields: [
+          { name: "color", type: "int", isPointer: false, isArray: false, accessLevel: "protected" as const },
+        ],
+        isClass: true,
+        accessDefault: "private" as const,
+        methods: [
+          { name: "area", returnType: "double", parameters: [], accessLevel: "public" as const, isVirtual: true, isConst: true, isStatic: false, isPureVirtual: true, isConstructor: false, isDestructor: false },
+        ],
+      },
+      {
+        name: "Circle",
+        fields: [
+          { name: "color", type: "int", isPointer: false, isArray: false, accessLevel: "protected" as const },
+          { name: "radius", type: "double", isPointer: false, isArray: false, accessLevel: "public" as const },
+        ],
+        isClass: true,
+        baseClass: "Shape",
+        accessDefault: "private" as const,
+        methods: [
+          { name: "Circle", returnType: "void", parameters: [{ name: "r", type: "double" }], accessLevel: "public" as const, isVirtual: false, isConst: false, isStatic: false, isPureVirtual: false, isConstructor: true, isDestructor: false },
+          { name: "area", returnType: "double", parameters: [], accessLevel: "public" as const, isVirtual: false, isConst: true, isStatic: false, isPureVirtual: false, isConstructor: false, isDestructor: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  cppStack: {
+    name: "C++ Stack",
+    description: "Class-based stack",
+    icon: Box,
+    structs: [
+      {
+        name: "Stack",
+        fields: [
+          { name: "data", type: "int", isPointer: true, isArray: false, accessLevel: "private" as const },
+          { name: "top", type: "int", isPointer: false, isArray: false, accessLevel: "private" as const },
+          { name: "capacity", type: "int", isPointer: false, isArray: false, accessLevel: "private" as const },
+        ],
+        isClass: true,
+        accessDefault: "private" as const,
+        methods: [
+          { name: "Stack", returnType: "void", parameters: [{ name: "cap", type: "int" }], accessLevel: "public" as const, isVirtual: false, isConst: false, isStatic: false, isPureVirtual: false, isConstructor: true, isDestructor: false },
+          { name: "push", returnType: "void", parameters: [{ name: "val", type: "int" }], accessLevel: "public" as const, isVirtual: false, isConst: false, isStatic: false, isPureVirtual: false, isConstructor: false, isDestructor: false },
+          { name: "pop", returnType: "int", parameters: [], accessLevel: "public" as const, isVirtual: false, isConst: false, isStatic: false, isPureVirtual: false, isConstructor: false, isDestructor: false },
+        ],
+      },
+    ] as CStruct[],
+  },
+  cppGraph: {
+    name: "C++ Graph",
+    description: "Adjacency list with classes",
+    icon: Box,
+    structs: [
+      {
+        name: "Vertex",
+        fields: [
+          { name: "id", type: "int", isPointer: false, isArray: false, accessLevel: "public" as const },
+          { name: "neighbors", type: "Vertex", isPointer: true, isArray: true, arraySize: 4, accessLevel: "public" as const },
+        ],
+        isClass: true,
+        accessDefault: "private" as const,
+      },
+      {
+        name: "Graph",
+        fields: [
+          { name: "vertices", type: "Vertex", isPointer: true, isArray: false, accessLevel: "public" as const },
+          { name: "count", type: "int", isPointer: false, isArray: false, accessLevel: "public" as const },
+        ],
+        isClass: true,
+        accessDefault: "private" as const,
+      },
+    ] as CStruct[],
+  },
 };
 
 // Export template loading function for use in App.tsx
@@ -178,6 +299,10 @@ export const loadTemplate = (templateKey: keyof typeof templates) => {
         name: templateStruct.name,
         typedef: templateStruct.typedef,
         fields: templateStruct.fields,
+        ...(templateStruct.isClass ? { isClass: templateStruct.isClass } : {}),
+        ...(templateStruct.accessDefault ? { accessDefault: templateStruct.accessDefault } : {}),
+        ...(templateStruct.methods ? { methods: templateStruct.methods } : {}),
+        ...(templateStruct.baseClass ? { baseClass: templateStruct.baseClass } : {}),
       });
     }
   });
@@ -385,6 +510,112 @@ export const loadTemplate = (templateKey: keyof typeof templates) => {
           addConnection({ sourceInstanceId: rightInst.id, sourceFieldName: "parent", targetInstanceId: rootInst.id });
         }
       }, 100);
+    } else if (templateKey === "cppLinkedList") {
+      const struct = latestStructDefs.find((s) => s.name === "Node");
+      if (!struct) return;
+      addInstance(struct, { x: 100, y: 200 }, "head");
+      addInstance(struct, { x: 400, y: 200 }, "node_2");
+      addInstance(struct, { x: 700, y: 200 }, "node_3");
+      setTimeout(() => {
+        const allInstances = useCanvasStore.getState().instances;
+        const inst1 = allInstances[allInstances.length - 3];
+        const inst2 = allInstances[allInstances.length - 2];
+        const inst3 = allInstances[allInstances.length - 1];
+        if (inst1) updateFieldValue(inst1.id, "data", 10);
+        if (inst2) updateFieldValue(inst2.id, "data", 20);
+        if (inst3) updateFieldValue(inst3.id, "data", 30);
+        if (inst1 && inst2) {
+          addConnection({ sourceInstanceId: inst1.id, sourceFieldName: "next", targetInstanceId: inst2.id });
+        }
+        if (inst2 && inst3) {
+          addConnection({ sourceInstanceId: inst2.id, sourceFieldName: "next", targetInstanceId: inst3.id });
+        }
+      }, 100);
+    } else if (templateKey === "cppBinaryTree") {
+      const struct = latestStructDefs.find((s) => s.name === "TreeNode");
+      if (!struct) return;
+      addInstance(struct, { x: 400, y: 100 }, "root");
+      addInstance(struct, { x: 200, y: 300 }, "left");
+      addInstance(struct, { x: 600, y: 300 }, "right");
+      setTimeout(() => {
+        const allInstances = useCanvasStore.getState().instances;
+        const rootInst = allInstances[allInstances.length - 3];
+        const leftInst = allInstances[allInstances.length - 2];
+        const rightInst = allInstances[allInstances.length - 1];
+        if (rootInst) updateFieldValue(rootInst.id, "val", 50);
+        if (leftInst) updateFieldValue(leftInst.id, "val", 30);
+        if (rightInst) updateFieldValue(rightInst.id, "val", 70);
+        if (rootInst && leftInst) {
+          addConnection({ sourceInstanceId: rootInst.id, sourceFieldName: "left", targetInstanceId: leftInst.id });
+        }
+        if (rootInst && rightInst) {
+          addConnection({ sourceInstanceId: rootInst.id, sourceFieldName: "right", targetInstanceId: rightInst.id });
+        }
+      }, 100);
+    } else if (templateKey === "cppInheritance") {
+      const circleStruct = latestStructDefs.find((s) => s.name === "Circle");
+      if (!circleStruct) return;
+      addInstance(circleStruct, { x: 200, y: 200 }, "circle_1");
+      addInstance(circleStruct, { x: 500, y: 200 }, "circle_2");
+      setTimeout(() => {
+        const allInstances = useCanvasStore.getState().instances;
+        const inst1 = allInstances[allInstances.length - 2];
+        const inst2 = allInstances[allInstances.length - 1];
+        if (inst1) {
+          updateFieldValue(inst1.id, "color", 1);
+          updateFieldValue(inst1.id, "radius", 5);
+        }
+        if (inst2) {
+          updateFieldValue(inst2.id, "color", 2);
+          updateFieldValue(inst2.id, "radius", 10);
+        }
+      }, 100);
+    } else if (templateKey === "cppStack") {
+      const struct = latestStructDefs.find((s) => s.name === "Stack");
+      if (!struct) return;
+      addInstance(struct, { x: 300, y: 200 }, "stack_1");
+      setTimeout(() => {
+        const allInstances = useCanvasStore.getState().instances;
+        const inst1 = allInstances[allInstances.length - 1];
+        if (inst1) {
+          updateFieldValue(inst1.id, "top", -1);
+          updateFieldValue(inst1.id, "capacity", 10);
+        }
+      }, 100);
+    } else if (templateKey === "cppGraph") {
+      const vertexStruct = latestStructDefs.find((s) => s.name === "Vertex");
+      const graphStruct = latestStructDefs.find((s) => s.name === "Graph");
+      if (vertexStruct) {
+        addInstance(vertexStruct, { x: 200, y: 200 }, "v1");
+        addInstance(vertexStruct, { x: 500, y: 200 }, "v2");
+        addInstance(vertexStruct, { x: 350, y: 400 }, "v3");
+      }
+      if (graphStruct) {
+        addInstance(graphStruct, { x: 100, y: 50 }, "graph");
+      }
+      setTimeout(() => {
+        const allInstances = useCanvasStore.getState().instances;
+        const v1 = allInstances.find((i) => i.instanceName === "v1");
+        const v2 = allInstances.find((i) => i.instanceName === "v2");
+        const v3 = allInstances.find((i) => i.instanceName === "v3");
+        const graph = allInstances.find((i) => i.instanceName === "graph");
+        if (v1) updateFieldValue(v1.id, "id", 1);
+        if (v2) updateFieldValue(v2.id, "id", 2);
+        if (v3) updateFieldValue(v3.id, "id", 3);
+        if (graph) updateFieldValue(graph.id, "count", 3);
+        if (v1 && v2) {
+          addConnection({ sourceInstanceId: v1.id, sourceFieldName: "neighbors[0]", targetInstanceId: v2.id });
+        }
+        if (v1 && v3) {
+          addConnection({ sourceInstanceId: v1.id, sourceFieldName: "neighbors[1]", targetInstanceId: v3.id });
+        }
+        if (v2 && v3) {
+          addConnection({ sourceInstanceId: v2.id, sourceFieldName: "neighbors[0]", targetInstanceId: v3.id });
+        }
+        if (graph && v1) {
+          addConnection({ sourceInstanceId: graph.id, sourceFieldName: "vertices", targetInstanceId: v1.id });
+        }
+      }, 100);
     }
   }, 200);
 };
@@ -398,7 +629,11 @@ const Sidebar = ({
     structDefinitions,
     deleteStructDefinition,
     instances,
+    workspaceTabs,
+    activeWorkspaceId,
   } = useCanvasStore();
+  const activeTab = workspaceTabs.find(t => t.id === activeWorkspaceId);
+  const workspaceLang = activeTab?.language || "c";
 
   const handleDragStart = (event: React.DragEvent, structName: string) => {
     event.dataTransfer.setData("application/reactflow", structName);
@@ -443,7 +678,7 @@ const Sidebar = ({
         style={{ backgroundColor: UI_COLORS.cyan }}
       >
         <h1 className="text-lg font-heading tracking-wider uppercase">
-          Structs
+          {workspaceLang === "cpp" ? "Classes" : "Structs"}
         </h1>
 
         {/* New Struct Button */}
@@ -481,6 +716,9 @@ const Sidebar = ({
                 <div className="flex-1 min-w-0">
                   <div className="font-mono font-heading text-xs truncate">
                     {struct.name}
+                    <span className="text-[9px] border border-black/40 px-1 py-0 rounded font-heading bg-white/40 ml-1">
+                      {struct.isClass ? "class" : "struct"}
+                    </span>
                   </div>
                   <div className="text-xs font-base text-gray-700 mt-0.5">
                     {struct.fields.length} field

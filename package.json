@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "server:up": "docker-compose up -d --build",
+    "server:down": "docker-compose down",
+    "dev:full": "docker-compose up -d --build && vite"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
@@ -25,11 +28,12 @@
     "html-to-image": "^1.11.11",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",
-    "lucide-react": "^0.559.0",
+    "lucide-react": "^0.454.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-flow": "^1.0.3",
     "react-hot-toast": "^2.6.0",
+    "react-resizable-panels": "^4.6.2",
     "tailwind-merge": "^3.4.0",
     "zustand": "^5.0.9"
   },

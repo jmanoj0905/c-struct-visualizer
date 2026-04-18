@@ -1,6 +1,52 @@
-import type { HeapObject, HeapState, VariableSnapshot } from "../types/visualizer";
+import type { HeapObject, HeapState, VariableSnapshot, StackFrame, StackPointerMetadata } from "../types/visualizer";
 import type { CStruct, CField, StructInstance, PointerInstance, PointerConnection } from "../types";
 import { getStructColor, getPointerColor } from "../utils/colors";
+
+/**
+ * Extracts stack pointer metadata for arrows connecting stack variables to heap objects.
+ * Filters for non-null pointers that point to valid heap objects.
+ */
+function extractStackPointers(
+  callStack: StackFrame[],
+  heapObjects: HeapObject[],
+): StackPointerMetadata[] {
+  const stackPointers: StackPointerMetadata[] = [];
+  const activeHeapAddresses = new Set(
+    heapObjects.filter((h) => !h.freed).map((h) => h.address)
+  );
+
+  // Collect all pointer variable names for consistent coloring
+  const allPointerNames: string[] = [];
+  callStack.forEach((frame) => {
+    frame.variables.forEach((variable) => {
+      if (variable.isPointer && variable.pointsTo !== undefined) {
+        allPointerNames.push(variable.name);
+      }
+    });
+  });
+
+  // Extract stack pointers from each frame
+  callStack.forEach((frame, frameIndex) => {
+    frame.variables.forEach((variable) => {
+      // Only process pointer variables that point to valid heap objects
+      if (
+        variable.isPointer &&
+        variable.pointsTo !== undefined &&
+        activeHeapAddresses.has(variable.pointsTo)
+      ) {
+        stackPointers.push({
+          variableName: variable.name,
+          frameIndex: callStack.length - 1 - frameIndex, // Reverse: 0 = active frame
+          frameName: frame.functionName,
+          targetAddress: variable.pointsTo,
+          color: getPointerColor(variable.name, allPointerNames),
+        });
+      }
+    });
+  });
+
+  return stackPointers;
+}
 
 /**
  * Maps heap objects and stack variables into the ReactFlow types
@@ -8,7 +54,8 @@ import { getStructColor, getPointerColor } from "../utils/colors";
  */
 export function mapHeapToReactFlow(
   heapObjects: HeapObject[],
-  stackVariables: VariableSnapshot[],
+  _stackVariables: VariableSnapshot[],
+  callStack: StackFrame[] = [],
 ): HeapState {
   const structDefinitions: CStruct[] = [];
   const structInstances: StructInstance[] = [];
@@ -32,19 +79,43 @@ export function mapHeapToReactFlow(
     // Build CStruct definition if not seen before
     if (!seenStructNames.has(obj.typeName)) {
       seenStructNames.add(obj.typeName);
-      const fields: CField[] = Object.entries(obj.fields).map(([fieldName, fieldInfo]) => ({
-        name: fieldName,
-        type: fieldInfo.type.replace(/\*+$/, "").trim(),
-        isPointer: fieldInfo.isPointer,
-        isArray: false,
-        pointerLevel: fieldInfo.pointerLevel || 0,
-      }));
+      const baseFieldSet = new Set(obj.baseClassFields || []);
+      const fields: CField[] = Object.entries(obj.fields).map(([fieldName, fieldInfo]) => {
+        const field: CField = {
+          name: fieldName,
+          type: fieldInfo.type.replace(/\*+$/, "").trim(),
+          isPointer: fieldInfo.isPointer,
+          isArray: false,
+          pointerLevel: fieldInfo.pointerLevel || 0,
+        };
+        // Mark inherited fields
+        if (baseFieldSet.has(fieldName)) {
+          field.accessLevel = "protected"; // visual hint for inherited
+        }
+        return field;
+      });
 
-      structDefinitions.push({
+      const structDef: CStruct = {
         name: obj.typeName,
         fields,
         color: getStructColor(obj.typeName, allStructNames),
-      });
+      };
+
+      // Attach C++ class metadata
+      if (obj.className) {
+        structDef.isClass = true;
+      }
+      if (obj.hasVtable) {
+        // Add synthetic __vptr field at the top
+        fields.unshift({
+          name: "__vptr",
+          type: obj.className || obj.typeName,
+          isPointer: false,
+          isArray: false,
+        });
+      }
+
+      structDefinitions.push(structDef);
     }
 
     // Build StructInstance
@@ -55,10 +126,14 @@ export function mapHeapToReactFlow(
       }
     }
 
+    const displayName = obj.className
+      ? `${obj.className}@${obj.address.toString(16)}`
+      : `${obj.typeName}@${obj.address.toString(16)}`;
+
     structInstances.push({
       id: instanceId,
       structName: obj.typeName,
-      instanceName: `${obj.typeName}@${obj.address.toString(16)}`,
+      instanceName: displayName,
       position: { x: 0, y: 0 }, // Will be set by layout
       fieldValues,
     });
@@ -81,36 +156,8 @@ export function mapHeapToReactFlow(
     }
   }
 
-  // 2. Convert stack pointer variables → PointerInstance
-  const pointerVars = stackVariables.filter((v) => v.isPointer);
-  const allPointerNames = pointerVars.map((v) => v.name);
-
-  for (const ptrVar of pointerVars) {
-    const pointerId = `ptr-${ptrVar.name}`;
-
-    // Find target heap object
-    let targetInstanceId: string | null = null;
-    if (ptrVar.pointsTo !== undefined) {
-      const targetObj = activeHeapObjects.find(
-        (h) => h.address === ptrVar.pointsTo,
-      );
-      if (targetObj) {
-        targetInstanceId = `heap-${targetObj.address}`;
-      }
-    }
-
-    pointerInstances.push({
-      id: pointerId,
-      pointerVariableId: pointerId,
-      name: ptrVar.name,
-      type: ptrVar.type.replace(/\*+$/, "").trim(),
-      pointerLevel: ptrVar.pointerLevel,
-      position: { x: 0, y: 0 }, // Will be set by layout
-      targetInstanceId,
-      targetFieldName: null,
-      color: getPointerColor(ptrVar.name, allPointerNames),
-    });
-  }
+  // Stack pointer metadata (used by StackHeapArrows SVG overlay)
+  const stackPointers = extractStackPointers(callStack, heapObjects);
 
   return {
     objects: heapObjects,
@@ -118,5 +165,6 @@ export function mapHeapToReactFlow(
     structInstances,
     pointerInstances,
     connections,
+    stackPointers,
   };
 }

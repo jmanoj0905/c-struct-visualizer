@@ -3,17 +3,16 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { cpp } from "@codemirror/lang-cpp";
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateField, StateEffect } from "@codemirror/state";
-import { Play, Loader2, Keyboard, Square } from "lucide-react";
+import { Play, Loader2, Keyboard, Square, X } from "lucide-react";
 import { useVisualizerStore } from "../../store/visualizerStore";
+import { detectLanguage } from "../../engine/traceRunner";
 import { UI_COLORS } from "../../utils/colors";
-import ExecutionControls from "./ExecutionControls";
-import ExecutionTimeline from "./ExecutionTimeline";
 
-// State effect to update the highlighted line
-const setHighlightedLine = StateEffect.define<{
+// State effect to update highlighted lines
+const setHighlightedLines = StateEffect.define<{
   current: number;
   next: number;
-  selected: number;
+  selected: number[];
 }>();
 
 // Line highlight decorations
@@ -27,14 +26,15 @@ const lineHighlightField = StateField.define<DecorationSet>({
   },
   update(decoSet, tr) {
     for (const e of tr.effects) {
-      if (e.is(setHighlightedLine)) {
+      if (e.is(setHighlightedLines)) {
         const { current, next, selected } = e.value;
         const decorations: { from: number; to: number; value: Decoration }[] = [];
 
-        if (selected > 0) {
-          const lineNum = Math.min(selected, tr.state.doc.lines);
-          const line = tr.state.doc.line(lineNum);
-          decorations.push({ from: line.from, to: line.from, value: selectedLineDeco });
+        for (const lineNum of selected) {
+          if (lineNum > 0 && lineNum <= tr.state.doc.lines) {
+            const line = tr.state.doc.line(lineNum);
+            decorations.push({ from: line.from, to: line.from, value: selectedLineDeco });
+          }
         }
         if (current > 0) {
           const line = tr.state.doc.line(Math.min(current, tr.state.doc.lines));
@@ -71,28 +71,27 @@ const highlightTheme = EditorView.baseTheme({
 });
 
 const CodeEditorPanel = () => {
-  const { code, setCode, trace, currentStepIndex, isTracing, runTrace, stopExecution, traceError, selectedLine, setSelectedLine } =
+  const { code, setCode, trace, currentStepIndex, isTracing, runTrace, stopExecution, traceError, selectedLines, toggleSelectedLine, clearSelectedLines } =
     useVisualizerStore();
+  const detectedLang = useMemo(() => detectLanguage(code), [code]);
   const cmRef = useRef<ReactCodeMirrorRef>(null);
 
   const currentStep = trace?.[currentStepIndex] ?? null;
   const nextStep = trace?.[currentStepIndex + 1] ?? null;
 
-  // Handle clicks on the line number gutter
+  // Handle clicks on the line number gutter — toggle line in/out of selection
   const handleEditorWrapperClick = useCallback(
     (e: React.MouseEvent) => {
       if (!trace) return;
       const target = e.target as HTMLElement;
-      // Check if the click is on a line number element inside .cm-lineNumbers
       if (!target.closest(".cm-lineNumbers")) return;
-      // The gutter element text content is the line number
       const gutterEl = target.closest(".cm-gutterElement") as HTMLElement | null;
       if (!gutterEl) return;
       const lineNum = parseInt(gutterEl.textContent ?? "", 10);
       if (isNaN(lineNum)) return;
-      setSelectedLine(selectedLine === lineNum ? null : lineNum);
+      toggleSelectedLine(lineNum);
     },
-    [trace, selectedLine, setSelectedLine],
+    [trace, toggleSelectedLine],
   );
 
   const extensions = useMemo(
@@ -103,19 +102,18 @@ const CodeEditorPanel = () => {
   // Update highlighted lines via effect when step/selection changes
   const currentLine = currentStep?.line ?? 0;
   const nextLine = nextStep?.line ?? 0;
-  const selectedLineNum = selectedLine ?? 0;
 
   useEffect(() => {
     const view = cmRef.current?.view;
     if (!view) return;
     view.dispatch({
-      effects: setHighlightedLine.of({
+      effects: setHighlightedLines.of({
         current: trace ? currentLine : 0,
         next: trace ? nextLine : 0,
-        selected: trace ? selectedLineNum : 0,
+        selected: trace ? selectedLines : [],
       }),
     });
-  }, [trace, currentLine, nextLine, selectedLineNum]);
+  }, [trace, currentLine, nextLine, selectedLines]);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -127,6 +125,9 @@ const CodeEditorPanel = () => {
         <div className="flex items-center gap-2">
           <Keyboard size={14} />
           <span className="font-heading text-xs">Code Editor</span>
+          <span className="text-[9px] font-heading border border-black/40 px-1.5 py-0.5 rounded bg-white/30">
+            {detectedLang === "cpp" ? "C++" : "C"}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {/* Stop button — visible when trace is loaded or running */}
@@ -159,6 +160,7 @@ const CodeEditorPanel = () => {
               <Play size={14} fill="currentColor" />
             )}
           </button>
+
         </div>
       </div>
 
@@ -190,11 +192,24 @@ const CodeEditorPanel = () => {
         />
       </div>
 
-      {/* Execution timeline */}
-      {trace && <ExecutionTimeline />}
+      {/* Traced lines indicator */}
+      {trace && selectedLines.length > 0 && (
+        <div className="flex items-center gap-1.5 px-2 py-1 border-t-2 border-black bg-blue-50 text-[10px] font-heading">
+          <span className="text-blue-700">
+            Tracing line{selectedLines.length > 1 ? "s" : ""}{" "}
+            {[...selectedLines].sort((a, b) => a - b).join(", ")}
+          </span>
+          <button
+            onClick={clearSelectedLines}
+            className="ml-auto flex items-center gap-0.5 px-1 py-0.5 rounded hover:bg-blue-200/50 text-blue-600 transition-colors"
+            title="Clear traced lines"
+          >
+            <X size={10} />
+            <span>Clear</span>
+          </button>
+        </div>
+      )}
 
-      {/* Execution controls floating at bottom */}
-      <ExecutionControls />
     </div>
   );
 };

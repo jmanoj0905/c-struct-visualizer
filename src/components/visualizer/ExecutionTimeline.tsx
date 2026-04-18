@@ -5,7 +5,7 @@ import { UI_COLORS } from "../../utils/colors";
 const MAX_INDIVIDUAL_SEGMENTS = 200;
 
 const ExecutionTimeline = () => {
-  const { trace, currentStepIndex, goToStep, selectedLine } = useVisualizerStore();
+  const { trace, currentStepIndex, goToStep, selectedLines } = useVisualizerStore();
   const barRef = useRef<HTMLDivElement>(null);
 
   // For large traces, fall back to click-position math on a gradient bar
@@ -31,7 +31,7 @@ const ExecutionTimeline = () => {
       const pctStart = (i / totalSteps) * 100;
       const pctEnd = ((i + 1) / totalSteps) * 100;
       const isCurrent = i === currentStepIndex;
-      const isHighlighted = selectedLine != null && trace[i].line === selectedLine;
+      const isHighlighted = selectedLines.length > 0 && selectedLines.includes(trace[i].line);
       let color: string;
       if (isCurrent) color = "#4CAF50";
       else if (isHighlighted) color = UI_COLORS.blue;
@@ -39,7 +39,7 @@ const ExecutionTimeline = () => {
       stops.push(`${color} ${pctStart}%`, `${color} ${pctEnd}%`);
     }
     return `linear-gradient(to right, ${stops.join(", ")})`;
-  }, [trace, currentStepIndex, selectedLine, usesSegments]);
+  }, [trace, currentStepIndex, selectedLines, usesSegments]);
 
   if (!trace || trace.length === 0) return null;
 
@@ -48,14 +48,14 @@ const ExecutionTimeline = () => {
   // Segment-based rendering for reasonable trace sizes
   if (usesSegments) {
     return (
-      <div className="border-t-2 border-black px-2 py-1.5" style={{ backgroundColor: "#fafafa" }}>
+      <div className="px-2 py-1.5" style={{ backgroundColor: "#fafafa" }}>
         <div
           className="flex w-full rounded-sm overflow-hidden"
           style={{ height: 16, border: "1px solid #000" }}
         >
           {trace.map((step, i) => {
             const isCurrent = i === currentStepIndex;
-            const isHighlighted = selectedLine != null && step.line === selectedLine;
+            const isHighlighted = selectedLines.length > 0 && selectedLines.includes(step.line);
             let bg: string;
             if (isCurrent) bg = "#4CAF50";
             else if (isHighlighted) bg = UI_COLORS.blue;
@@ -85,7 +85,7 @@ const ExecutionTimeline = () => {
   const currentWidth = Math.max(100 / totalSteps, 1.5);
 
   return (
-    <div className="border-t-2 border-black px-2 py-1.5" style={{ backgroundColor: "#fafafa" }}>
+    <div className="px-2 py-1.5" style={{ backgroundColor: "#fafafa" }}>
       <div
         ref={barRef}
         onClick={handleBarClick}

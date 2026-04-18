@@ -4,6 +4,7 @@ import { templates, loadTemplate } from "./Sidebar";
 import { useCanvasStore } from "../store/canvasStore";
 import { UI_COLORS } from "../utils/colors";
 import { showAlert } from "./AlertContainer";
+import type { CStruct, StructInstance, PointerConnection } from "../types";
 
 interface TemplateManagerProps {
   isOpen: boolean;
@@ -15,15 +16,17 @@ interface CustomTemplate {
   name: string;
   description: string;
   workspace: {
-    structDefinitions: any[];
-    instances: any[];
-    connections: any[];
+    structDefinitions: CStruct[];
+    instances: StructInstance[];
+    connections: PointerConnection[];
   };
   createdAt: string;
 }
 
 const TemplateManager = ({ isOpen, onClose }: TemplateManagerProps) => {
-  const { structDefinitions, instances, connections } = useCanvasStore();
+  const { structDefinitions, instances, connections, workspaceTabs, activeWorkspaceId } = useCanvasStore();
+  const activeTab = workspaceTabs.find(t => t.id === activeWorkspaceId);
+  const workspaceLang = activeTab?.language || "c";
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>(() => {
     const saved = localStorage.getItem("customTemplates");
     return saved ? JSON.parse(saved) : [];
@@ -308,7 +311,9 @@ const TemplateManager = ({ isOpen, onClose }: TemplateManagerProps) => {
           <div className="mb-8">
             <h3 className="text-lg font-heading font-bold mb-4">Built-in Templates</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {Object.entries(templates).map(([key, template], index) => {
+              {Object.entries(templates).filter(([key]) =>
+                workspaceLang === "cpp" ? key.startsWith("cpp") : !key.startsWith("cpp")
+              ).map(([key, template], index) => {
                 const Icon = template.icon;
                 // Cycle through pastel colors for variety
                 const pastelColors = [

@@ -1,21 +1,29 @@
 // AST node definitions for the C interpreter
 
 export interface CType {
-  base: string;        // "int", "float", "char", "double", "void", or struct name
+  base: string;        // "int", "float", "char", "double", "void", or struct/class name
   pointerLevel: number; // 0 = value, 1 = *, 2 = **, etc.
   isStruct: boolean;
+  isClass?: boolean;          // true for class types
+  isReference?: boolean;      // true for T& reference types
+  isConst?: boolean;          // true for const-qualified
   arraySize?: number;   // if declared as array
 }
 
 export function typeToString(t: CType): string {
-  let s = t.isStruct ? `struct ${t.base}` : t.base;
+  let s = "";
+  if (t.isConst) s += "const ";
+  if (t.isStruct) s += `struct ${t.base}`;
+  else s += t.base;
   s += "*".repeat(t.pointerLevel);
+  if (t.isReference) s += "&";
   if (t.arraySize !== undefined) s += `[${t.arraySize}]`;
   return s;
 }
 
 export function sizeOfType(t: CType, structDefs: Map<string, StructDefNode>): number {
   if (t.pointerLevel > 0) return 8;
+  if (t.isReference) return 8; // references have pointer size
   if (t.arraySize !== undefined) {
     const elem: CType = { ...t, arraySize: undefined };
     return sizeOfType(elem, structDefs) * t.arraySize;
@@ -27,8 +35,10 @@ export function sizeOfType(t: CType, structDefs: Map<string, StructDefNode>): nu
     case "float": return 4;
     case "double": return 8;
     case "long": return 8;
+    case "bool": return 1;
     case "void": return 0;
     default: {
+      // class types use the same size semantics as structs
       const def = structDefs.get(t.base);
       if (def) {
         let size = 0;
@@ -46,6 +56,7 @@ export type ASTNode =
   | ProgramNode
   | FunctionDefNode
   | StructDefNode
+  | ClassDefNode
   | VarDeclNode
   | ReturnStmtNode
   | ExprStmtNode
@@ -55,7 +66,8 @@ export type ASTNode =
   | DoWhileStmtNode
   | BlockNode
   | BreakStmtNode
-  | ContinueStmtNode;
+  | ContinueStmtNode
+  | MethodDefNode;
 
 export type ExprNode =
   | NumberLitNode
@@ -115,3 +127,38 @@ export interface NullLitNode extends BaseNode { kind: "NullLit"; }
 export interface TernaryExprNode extends BaseNode { kind: "TernaryExpr"; condition: ExprNode; then: ExprNode; else_: ExprNode; }
 export interface PreIncDecNode extends BaseNode { kind: "PreIncDec"; op: "++" | "--"; operand: ExprNode; }
 export interface PostIncDecNode extends BaseNode { kind: "PostIncDec"; op: "++" | "--"; operand: ExprNode; }
+
+// --- C++ AST Nodes ---
+
+export interface ClassDefNode extends BaseNode {
+  kind: "ClassDef";
+  name: string;
+  baseClass?: string;
+  sections: ClassSection[];
+}
+
+export interface ClassSection {
+  access: "public" | "private" | "protected";
+  members: (FieldDeclNode | MethodDefNode)[];
+}
+
+export interface FieldDeclNode extends BaseNode {
+  kind: "FieldDecl";
+  name: string;
+  fieldType: CType;
+}
+
+export interface MethodDefNode extends BaseNode {
+  kind: "MethodDef";
+  className: string;
+  name: string;
+  returnType: CType;
+  params: { name: string; paramType: CType }[];
+  body: BlockNode | null;    // null for declarations without body
+  isVirtual: boolean;
+  isConst: boolean;
+  isConstructor: boolean;
+  isDestructor: boolean;
+  isPureVirtual: boolean;
+  initializerList?: { field: string; value: ExprNode }[];
+}

@@ -1,4 +1,4 @@
-import type { CStruct, CField, PointerVariable } from "../types";
+import type { CStruct, CField, CMethod, PointerVariable } from "../types";
 
 export const PRIMITIVES = ["int", "char", "float", "double", "long", "short", "void", "bool"] as const;
 
@@ -28,6 +28,8 @@ export function parseStruct(structCode: string): CStruct | null {
     let structName: string;
     let typedef: string | undefined;
     let body: string;
+    let isClass = false;
+    let baseClass: string | undefined;
 
     if (typedefMatch) {
       // Has typedef
@@ -35,43 +37,195 @@ export function parseStruct(structCode: string): CStruct | null {
       body = typedefMatch[2];
       typedef = typedefMatch[3];
     } else {
+      // Check for class keyword
+      const classMatch = cleaned.match(/class\s+(\w+)\s*(?::\s*public\s+(\w+)\s*)?\{/);
       // Regular struct without typedef
-      const structMatch = cleaned.match(/struct\s+(\w+)\s*\{/);
-      if (!structMatch) {
+      const structMatch = cleaned.match(/struct\s+(\w+)\s*(?::\s*public\s+(\w+)\s*)?\{/);
+
+      if (classMatch) {
+        isClass = true;
+        structName = classMatch[1];
+        baseClass = classMatch[2] || undefined;
+      } else if (structMatch) {
+        structName = structMatch[1];
+        baseClass = structMatch[2] || undefined;
+      } else {
         throw new Error(
-          "Invalid struct syntax. Expected: struct StructName { ... } or typedef struct StructName { ... } TypedefName;",
+          "Invalid syntax. Expected: struct Name { ... }, class Name { ... }, or typedef struct Name { ... } TypedefName;",
         );
       }
-
-      structName = structMatch[1];
 
       // Extract fields between braces
       const bodyMatch = cleaned.match(/\{([\s\S]*)\}/);
       if (!bodyMatch) {
-        throw new Error("Could not find struct body");
+        throw new Error("Could not find body");
       }
       body = bodyMatch[1];
     }
 
-    const fieldLines = body
+    const fields: CField[] = [];
+    const methods: CMethod[] = [];
+    let currentAccess: "public" | "private" | "protected" = isClass ? "private" : "public";
+
+    const bodyLines = body
       .split(";")
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
 
-    const fields: CField[] = [];
+    for (const line of bodyLines) {
+      // Check for access specifier: "public:", "private:", "protected:"
+      const accessMatch = line.match(/^(public|private|protected)\s*:/);
+      if (accessMatch) {
+        currentAccess = accessMatch[1] as "public" | "private" | "protected";
+        // There might be content after the colon on the same line
+        const rest = line.slice(accessMatch[0].length).trim();
+        if (rest.length > 0) {
+          const method = parseMethodDeclaration(rest, structName, currentAccess);
+          if (method) {
+            methods.push(method);
+          } else {
+            const field = parseField(rest);
+            if (field) {
+              field.accessLevel = currentAccess;
+              fields.push(field);
+            }
+          }
+        }
+        continue;
+      }
 
-    for (const line of fieldLines) {
+      // Try to parse as method declaration first
+      const method = parseMethodDeclaration(line, structName, currentAccess);
+      if (method) {
+        methods.push(method);
+        continue;
+      }
+
+      // Parse as field
       const field = parseField(line);
       if (field) {
+        field.accessLevel = currentAccess;
         fields.push(field);
       }
     }
 
-    return { name: structName, typedef, fields };
+    const result: CStruct = { name: structName, typedef, fields };
+    if (isClass) {
+      result.isClass = true;
+      result.accessDefault = "private";
+    }
+    if (baseClass) {
+      result.baseClass = baseClass;
+    }
+    if (methods.length > 0) {
+      result.methods = methods;
+    }
+    return result;
   } catch (error) {
     console.error("Parse error:", error);
     return null;
   }
+}
+
+/**
+ * Parse a method declaration like:
+ *   int getData() const
+ *   virtual void print()
+ *   Node(int d)           // constructor
+ *   ~Node()               // destructor
+ *   virtual double area() = 0
+ */
+function parseMethodDeclaration(
+  line: string,
+  className: string,
+  accessLevel: "public" | "private" | "protected",
+): CMethod | null {
+  const trimmed = line.trim();
+
+  // Destructor: ~ClassName(...)
+  const destructorMatch = trimmed.match(/^virtual\s+~(\w+)\s*\([^)]*\)|^~(\w+)\s*\([^)]*\)/);
+  if (destructorMatch) {
+    const name = destructorMatch[1] || destructorMatch[2];
+    if (name === className) {
+      return {
+        name: `~${name}`,
+        returnType: "void",
+        parameters: [],
+        accessLevel,
+        isVirtual: trimmed.startsWith("virtual"),
+        isConst: false,
+        isStatic: trimmed.startsWith("static"),
+        isPureVirtual: trimmed.includes("= 0"),
+        isConstructor: false,
+        isDestructor: true,
+      };
+    }
+  }
+
+  // Constructor: ClassName(params)
+  const constructorMatch = trimmed.match(/^(\w+)\s*\(([^)]*)\)/);
+  if (constructorMatch && constructorMatch[1] === className) {
+    const params = parseMethodParams(constructorMatch[2]);
+    return {
+      name: className,
+      returnType: "void",
+      parameters: params,
+      accessLevel,
+      isVirtual: false,
+      isConst: false,
+      isStatic: false,
+      isPureVirtual: false,
+      isConstructor: true,
+      isDestructor: false,
+    };
+  }
+
+  // Regular method: [virtual] [static] returnType name(params) [const] [= 0]
+  const methodMatch = trimmed.match(
+    /^(virtual\s+|static\s+)?\s*(\w[\w*&\s]*?)\s+(\w+)\s*\(([^)]*)\)\s*(const)?\s*(=\s*0)?$/,
+  );
+  if (methodMatch) {
+    const prefix = (methodMatch[1] || "").trim();
+    const returnType = methodMatch[2].trim();
+    const name = methodMatch[3];
+    const params = parseMethodParams(methodMatch[4]);
+    const isConst = !!methodMatch[5];
+    const isPureVirtual = !!methodMatch[6];
+
+    return {
+      name,
+      returnType,
+      parameters: params,
+      accessLevel,
+      isVirtual: prefix === "virtual" || isPureVirtual,
+      isConst,
+      isStatic: prefix === "static",
+      isPureVirtual,
+      isConstructor: false,
+      isDestructor: false,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Parse method parameter list like "int d, char* name"
+ */
+function parseMethodParams(paramStr: string): { name: string; type: string }[] {
+  const trimmed = paramStr.trim();
+  if (!trimmed || trimmed === "void") return [];
+
+  return trimmed.split(",").map((p) => {
+    const parts = p.trim();
+    // Match: type[*&] name
+    const match = parts.match(/^([\w*&\s]+?)\s+(\w+)$/);
+    if (match) {
+      return { name: match[2], type: match[1].trim() };
+    }
+    // Just a type without a name
+    return { name: "", type: parts };
+  });
 }
 
 function parseField(fieldLine: string): CField | null {
@@ -214,13 +368,14 @@ export function validateStructCode(
   const typedefMatch = code.match(
     /typedef\s+struct\s+(\w+)\s*\{([\s\S]*)\}\s*(\w+)\s*;/,
   );
-  const regularMatch = code.match(/struct\s+(\w+)\s*\{([\s\S]*)\}\s*;/);
+  const regularMatch = code.match(/struct\s+(\w+)\s*(?::\s*public\s+\w+\s*)?\{([\s\S]*)\}\s*;/);
+  const classMatch = code.match(/class\s+(\w+)\s*(?::\s*public\s+\w+\s*)?\{([\s\S]*)\}\s*;/);
 
-  if (!typedefMatch && !regularMatch) {
+  if (!typedefMatch && !regularMatch && !classMatch) {
     errors.push({
       line: 1,
       message:
-        "Invalid struct syntax. Use 'struct Name { ... };' or 'typedef struct Name { ... } TypedefName;'",
+        "Invalid syntax. Use 'struct Name { ... };', 'class Name { ... };', or 'typedef struct Name { ... } TypedefName;'",
       type: "error",
     });
     return errors;
@@ -253,8 +408,9 @@ export function validateStructCode(
         });
       }
     }
-  } else if (regularMatch) {
-    structName = regularMatch[1];
+  } else if (regularMatch || classMatch) {
+    const match = regularMatch || classMatch;
+    structName = match![1];
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].includes("{")) {
         bodyStartLine = i + 1;
@@ -265,22 +421,22 @@ export function validateStructCode(
     return errors;
   }
 
-  // Check if struct name already exists
+  // Check if struct/class name already exists
   if (!isEditing || editingStructName !== structName) {
     const nameExists = existingStructs.some((s) => s.name === structName);
     if (nameExists) {
       errors.push({
         line: 1,
-        message: `Struct name '${structName}' already exists!`,
+        message: `Name '${structName}' already exists!`,
         type: "error",
       });
     }
   }
 
   // Parse and validate each field
-  const bodyMatch = code.match(/\{([\s\S]*)\}/);
-  if (bodyMatch) {
-    const body = bodyMatch[1];
+  const bodyMatch2 = code.match(/\{([\s\S]*)\}/);
+  if (bodyMatch2) {
+    const body = bodyMatch2[1];
     const fieldLines = body
       .split(";")
       .map((line) => line.trim())
@@ -291,12 +447,25 @@ export function validateStructCode(
       // Count lines in this field
       const fieldLineCount = fieldLine.split("\n").length;
 
+      // Skip access specifier lines (e.g., "public:", "private:", "protected:")
+      const strippedLine = fieldLine.replace(/^(public|private|protected)\s*:\s*/, "").trim();
+      if (!strippedLine) {
+        currentLine += fieldLineCount;
+        continue;
+      }
+
+      // Skip method declarations (contain parentheses)
+      if (parseMethodDeclaration(strippedLine, structName, "public")) {
+        currentLine += fieldLineCount;
+        continue;
+      }
+
       // Try to parse the field
-      const field = parseField(fieldLine);
+      const field = parseField(strippedLine);
       if (!field) {
         errors.push({
           line: currentLine,
-          message: `Invalid field syntax: ${fieldLine.substring(0, 30)}...`,
+          message: `Invalid field syntax: ${strippedLine.substring(0, 30)}...`,
           type: "error",
         });
       } else {
@@ -312,20 +481,11 @@ export function validateStructCode(
         }
 
         // Check if the type is valid
-        // C Rule: Pointers to incomplete types (forward declarations) are allowed!
-        // For pointers: can point to ANY type name (even undefined structs)
-        // For non-pointers: must be a known primitive or defined type
         const isKnownType = isValidType(field.type, existingStructs);
         const isSelfReference = field.type === structName;
 
         if (field.isPointer) {
-          // Pointers can point to incomplete types (forward declarations)
-          // This is valid C: struct UndefinedStruct* ptr;
-          // No error needed - pointers to undefined structs are allowed
-
-          // Warning: For self-referential pointers, recommend using 'struct Name*' syntax
-          // But only if they're NOT already using it (check if fieldLine contains "struct")
-          if (isSelfReference && !fieldLine.includes("struct")) {
+          if (isSelfReference && !fieldLine.includes("struct") && !classMatch) {
             errors.push({
               line: currentLine,
               message: `Hint: Use 'struct ${structName}*' syntax for self-referential pointers (current: '${field.type}*').`,
@@ -333,9 +493,6 @@ export function validateStructCode(
             });
           }
         } else {
-          // Non-pointer fields must be known types
-          // You cannot have: struct UndefinedStruct field; (incomplete type)
-          // You can only have: struct UndefinedStruct* ptr; (pointer to incomplete type)
           if (!isKnownType && !isSelfReference) {
             errors.push({
               line: currentLine,

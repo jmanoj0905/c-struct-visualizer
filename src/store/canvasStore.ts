@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance, WorkspaceTab, WorkspaceMode } from "../types";
+import type { CStruct, StructInstance, PointerConnection, PointerVariable, PointerInstance, WorkspaceTab, WorkspaceMode, WorkspaceLanguage } from "../types";
 import { canConnectPointer, resolveTypeName } from "../parser/structParser";
 
 export interface HistoryState {
@@ -74,7 +74,7 @@ interface CanvasState {
   // Workspace tabs
   workspaceTabs: WorkspaceTab[];
   activeWorkspaceId: string;
-  addWorkspace: (mode?: WorkspaceMode) => void;
+  addWorkspace: (mode?: WorkspaceMode, language?: WorkspaceLanguage) => void;
   removeWorkspace: (id: string) => void;
   renameWorkspace: (id: string, name: string) => void;
   switchWorkspace: (id: string) => void;
@@ -154,7 +154,7 @@ export const useCanvasStore = create<CanvasState>()(
       historyIndex: -1,
 
       // Workspace tabs - defaults
-      workspaceTabs: [{ id: "ws-default", name: "Workspace 1", createdAt: Date.now(), mode: "free" as WorkspaceMode }],
+      workspaceTabs: [{ id: "ws-default", name: "C Workspace 1", createdAt: Date.now(), mode: "free" as WorkspaceMode, language: "c" as WorkspaceLanguage }],
       activeWorkspaceId: "ws-default",
 
       saveHistory: () => {
@@ -351,9 +351,12 @@ export const useCanvasStore = create<CanvasState>()(
       deleteStructDefinition: (structName) => {
         get().saveHistory();
         set((state) => ({
-          structDefinitions: state.structDefinitions.filter(
-            (s) => s.name !== structName,
-          ),
+          structDefinitions: state.structDefinitions
+            .filter((s) => s.name !== structName)
+            // Clear baseClass reference from derived classes that inherit from the deleted class
+            .map((s) =>
+              s.baseClass === structName ? { ...s, baseClass: undefined } : s,
+            ),
           // Remove all instances of this struct
           instances: state.instances.filter(
             (inst) => inst.structName !== structName,
@@ -381,11 +384,50 @@ export const useCanvasStore = create<CanvasState>()(
         set((state) => {
           const instanceName =
             customName || `${struct.name}_${++instanceCounter}`;
+          
+          // Calculate position 75px away from existing data structure if needed
+          let finalPosition = { ...position };
+          const existingInstances = state.instances;
+          
+          if (existingInstances.length > 0) {
+            // Find the rightmost instance
+            let maxX = -Infinity;
+            let rightmostY = 0;
+            
+            existingInstances.forEach((inst) => {
+              if (inst.position.x > maxX) {
+                maxX = inst.position.x;
+                rightmostY = inst.position.y;
+              }
+            });
+            
+            // If the requested position would overlap or is the default center position,
+            // place it 75px to the right of the rightmost instance
+            const DEFAULT_CENTER_X = 400;
+            const NODE_WIDTH = 350;
+            const MIN_DISTANCE = 75;
+            
+            // Check if position is the default center or would cause overlap
+            const isDefaultPosition = Math.abs(position.x - DEFAULT_CENTER_X) < 10;
+            const wouldOverlap = existingInstances.some((inst) => {
+              const dx = Math.abs(position.x - inst.position.x);
+              const dy = Math.abs(position.y - inst.position.y);
+              return dx < NODE_WIDTH && dy < 100;
+            });
+            
+            if (isDefaultPosition || wouldOverlap) {
+              finalPosition = {
+                x: maxX + NODE_WIDTH + MIN_DISTANCE,
+                y: rightmostY,
+              };
+            }
+          }
+          
           const newInstance: StructInstance = {
             id: `instance-${Date.now()}-${Math.random()}`,
             structName: struct.name,
             instanceName,
-            position,
+            position: finalPosition,
             fieldValues: {},
           };
           return { instances: [...state.instances, newInstance] };
@@ -704,22 +746,25 @@ export const useCanvasStore = create<CanvasState>()(
         });
       },
 
-      addWorkspace: (mode?: WorkspaceMode) => {
+      addWorkspace: (mode?: WorkspaceMode, language?: WorkspaceLanguage) => {
         const state = get();
         const wsMode = mode || "free";
+        const wsLang = language || "c";
 
         // Save current workspace snapshot
         saveSnapshot(state.activeWorkspaceId, state);
 
         const newId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const defaultName = wsMode === "visualizer"
-          ? `Visualizer ${state.workspaceTabs.filter(t => t.mode === "visualizer").length + 1}`
-          : `Workspace ${state.workspaceTabs.filter(t => t.mode !== "visualizer").length + 1}`;
+        const langPrefix = wsLang === "cpp" ? "C++" : "C";
+        const modeLabel = wsMode === "visualizer" ? "Visualizer" : "Workspace";
+        const sameKindCount = state.workspaceTabs.filter(t => t.mode === wsMode && t.language === wsLang).length + 1;
+        const defaultName = `${langPrefix} ${modeLabel} ${sameKindCount}`;
         const newTab: WorkspaceTab = {
           id: newId,
           name: defaultName,
           createdAt: Date.now(),
           mode: wsMode,
+          language: wsLang,
         };
         const empty = emptySnapshot();
 
@@ -818,6 +863,7 @@ export const useCanvasStore = create<CanvasState>()(
           name: `${sourceTab.name} (copy)`,
           createdAt: Date.now(),
           mode: sourceTab.mode || "free",
+          language: sourceTab.language || "c",
         };
 
         // Save clone to localStorage
@@ -932,14 +978,15 @@ export const useCanvasStore = create<CanvasState>()(
       onRehydrateStorage: () => (state) => {
         if (state && (!state.workspaceTabs || state.workspaceTabs.length === 0)) {
           const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          state.workspaceTabs = [{ id, name: "Workspace 1", createdAt: Date.now(), mode: "free" }];
+          state.workspaceTabs = [{ id, name: "C Workspace 1", createdAt: Date.now(), mode: "free", language: "c" }];
           state.activeWorkspaceId = id;
         }
-        // Migrate: add mode field to existing tabs that don't have it
+        // Migrate: add mode and language fields to existing tabs that don't have them
         if (state && state.workspaceTabs) {
           state.workspaceTabs = state.workspaceTabs.map(t => ({
             ...t,
             mode: t.mode || "free",
+            language: t.language || "c",
           }));
         }
       },

@@ -32,9 +32,11 @@ import WorkspaceTabBar from "./components/WorkspaceTabBar";
 import PointerMenu from "./components/PointerMenu";
 import Settings from "./components/Settings";
 import Dock from "./components/Dock";
-import HamburgerMenu from "./components/HamburgerMenu";
+import CommandPalette from "./components/CommandPalette";
 import TemplateManager from "./components/TemplateManager";
 import CodeVisualizerLayout from "./components/visualizer/CodeVisualizerLayout";
+import WelcomeScreen from "./components/WelcomeScreen";
+import HowToUseGuide from "./components/HowToUseGuide";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useCanvasStore } from "./store/canvasStore";
@@ -85,6 +87,8 @@ function FlowCanvas() {
     string | undefined
   >(undefined);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showHowToUse, setShowHowToUse] = useState(false);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showPointerMenu, setShowPointerMenu] = useState(true);
@@ -340,6 +344,79 @@ function FlowCanvas() {
     };
     input.click();
   }, []);
+
+  // Heap export helpers for visualizer mode
+  const getHeapViewport = useCallback(() => {
+    const heapCanvas = document.getElementById("heap-canvas");
+    if (!heapCanvas) return null;
+    return heapCanvas.querySelector(".react-flow__viewport") as HTMLElement | null;
+  }, []);
+
+  const handleHeapExportPNG = useCallback(() => {
+    const viewport = getHeapViewport();
+    if (!viewport) return;
+    toPng(viewport, { backgroundColor: "#f3f4f6", filter: exportFilter })
+      .then((dataUrl) => {
+        const link = document.createElement("a");
+        link.download = `heap-diagram-${Date.now()}.png`;
+        link.href = dataUrl;
+        link.click();
+        showAlert({ type: "success", message: "PNG exported successfully!", duration: 2000 });
+      })
+      .catch(() => showAlert({ type: "error", message: "Failed to export PNG. Please try again." }));
+  }, [getHeapViewport]);
+
+  const handleHeapExportSVG = useCallback(() => {
+    const viewport = getHeapViewport();
+    if (!viewport) return;
+    toSvg(viewport, { backgroundColor: "#f3f4f6", filter: exportFilter })
+      .then((dataUrl) => {
+        const link = document.createElement("a");
+        link.download = `heap-diagram-${Date.now()}.svg`;
+        link.href = dataUrl;
+        link.click();
+        showAlert({ type: "success", message: "SVG exported successfully!", duration: 2000 });
+      })
+      .catch(() => showAlert({ type: "error", message: "Failed to export SVG. Please try again." }));
+  }, [getHeapViewport]);
+
+  const handleHeapExportPDF = useCallback(() => {
+    const viewport = getHeapViewport();
+    if (!viewport) return;
+    toPng(viewport, { backgroundColor: "#f3f4f6", filter: exportFilter, pixelRatio: 2 })
+      .then((dataUrl) => {
+        const img = new Image();
+        img.src = dataUrl;
+        img.onload = () => {
+          const pdf = new jsPDF({
+            orientation: img.width > img.height ? "landscape" : "portrait",
+            unit: "px",
+            format: [img.width, img.height],
+          });
+          pdf.addImage(dataUrl, "PNG", 0, 0, img.width, img.height);
+          pdf.save(`heap-diagram-${Date.now()}.pdf`);
+          showAlert({ type: "success", message: "PDF exported successfully!", duration: 2000 });
+        };
+      })
+      .catch(() => showAlert({ type: "error", message: "Failed to export PDF. Please try again." }));
+  }, [getHeapViewport]);
+
+  const handleHeapCopyToClipboard = useCallback(() => {
+    const viewport = getHeapViewport();
+    if (!viewport) return;
+    toPng(viewport, { backgroundColor: "#f3f4f6", filter: exportFilter })
+      .then((dataUrl) =>
+        fetch(dataUrl)
+          .then((res) => res.blob())
+          .then((blob) =>
+            navigator.clipboard
+              .write([new ClipboardItem({ [blob.type]: blob })])
+              .then(() => showAlert({ type: "success", message: "Copied to clipboard!", duration: 2000 }))
+              .catch(() => showAlert({ type: "error", message: "Failed to copy to clipboard.", duration: 3000 }))
+          )
+      )
+      .catch(() => showAlert({ type: "error", message: "Failed to copy to clipboard. Please try again." }));
+  }, [getHeapViewport]);
 
   // Convert instances to React Flow nodes
   const structNodes: Node[] = instances.map((instance) => {
@@ -1640,15 +1717,36 @@ function FlowCanvas() {
   if (isVisualizerMode) {
     return (
       <>
-        <WorkspaceTabBar />
+        <WorkspaceTabBar onOpenCommandPalette={() => setShowCommandPalette(true)} />
         <CodeVisualizerLayout />
+        <CommandPalette
+          isOpen={showCommandPalette}
+          onClose={() => setShowCommandPalette(false)}
+          mode="visualizer"
+          onOpenSettings={() => setShowSettings(true)}
+          onShowHowToUse={() => setShowHowToUse(true)}
+          onExportPNG={handleHeapExportPNG}
+          onExportSVG={handleHeapExportSVG}
+          onExportPDF={handleHeapExportPDF}
+          onCopyToClipboard={handleHeapCopyToClipboard}
+        />
+        {showSettings && (
+          <Settings
+            onClose={() => setShowSettings(false)}
+            snapToGrid={snapToGrid}
+            onSnapToGridChange={setSnapToGrid}
+          />
+        )}
+        {showHowToUse && (
+          <HowToUseGuide onClose={() => setShowHowToUse(false)} />
+        )}
       </>
     );
   }
 
   return (
     <>
-    <WorkspaceTabBar />
+    <WorkspaceTabBar onOpenCommandPalette={() => setShowCommandPalette(true)} />
     <div ref={reactFlowWrapper} className="w-screen h-[calc(100vh-1.75rem)] mt-7 bg-gray-50">
       <AlertContainer />
       {/* Sidebar Toggle Button - On the edge of sidebar */}
@@ -1744,22 +1842,21 @@ function FlowCanvas() {
         onToggle={() => setShowPointerMenu(!showPointerMenu)}
       />
 
-      {/* Hamburger Menu - Top Right */}
-      <div
-        className="fixed top-11 z-10 transition-all duration-500 ease-in-out"
-        style={{ right: showPointerMenu ? "15.5rem" : "1rem" }}
-      >
-        <HamburgerMenu
-          onOpenSettings={() => setShowSettings(true)}
-          onSaveWorkspace={handleSaveWorkspace}
-          onLoadWorkspace={handleLoadWorkspace}
-          onOpenTemplates={() => setShowTemplateManager(true)}
-          onExportPNG={handleExportPNG}
-          onExportSVG={handleExportSVG}
-          onExportPDF={handleExportPDF}
-          onCopyToClipboard={handleCopyToClipboard}
-        />
-      </div>
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        mode="free"
+        onOpenSettings={() => setShowSettings(true)}
+        onShowHowToUse={() => setShowHowToUse(true)}
+        onSaveWorkspace={handleSaveWorkspace}
+        onLoadWorkspace={handleLoadWorkspace}
+        onOpenTemplates={() => setShowTemplateManager(true)}
+        onExportPNG={handleExportPNG}
+        onExportSVG={handleExportSVG}
+        onExportPDF={handleExportPDF}
+        onCopyToClipboard={handleCopyToClipboard}
+      />
 
       {/* Dock - Bottom Center */}
       <Dock
@@ -1824,6 +1921,10 @@ function FlowCanvas() {
           isOpen={showTemplateManager}
           onClose={() => setShowTemplateManager(false)}
         />
+      )}
+
+      {showHowToUse && (
+        <WelcomeScreen onDismiss={() => setShowHowToUse(false)} />
       )}
 
       {/* Connection popup for quick node creation */}
@@ -2475,9 +2576,21 @@ function FlowCanvas() {
   );
 }
 
+const WELCOME_KEY = "c-struct-viz-welcomed";
+
 function App() {
+  const [showWelcome, setShowWelcome] = useState(() => {
+    return !localStorage.getItem(WELCOME_KEY);
+  });
+
+  const handleDismissWelcome = () => {
+    localStorage.setItem(WELCOME_KEY, "1");
+    setShowWelcome(false);
+  };
+
   return (
     <ReactFlowProvider>
+      {showWelcome && <WelcomeScreen onDismiss={handleDismissWelcome} />}
       <FlowCanvas />
     </ReactFlowProvider>
   );

@@ -7,6 +7,8 @@ export interface VariableSnapshot {
   isPointer: boolean;
   pointerLevel: number;
   pointsTo?: number;     // simulated heap address
+  isReference?: boolean;
+  isConst?: boolean;
 }
 
 export interface StackFrame {
@@ -27,6 +29,17 @@ export interface HeapObject {
     pointsTo?: number;
   }>;
   freed: boolean;
+  className?: string;
+  hasVtable?: boolean;
+  baseClassFields?: string[];
+}
+
+export interface StackPointerMetadata {
+  variableName: string;
+  frameIndex: number;      // 0 = active, higher = older
+  frameName: string;       // e.g., "main()"
+  targetAddress: number;   // heap address
+  color: string;           // from getPointerColor()
 }
 
 export interface HeapState {
@@ -35,6 +48,7 @@ export interface HeapState {
   structInstances: StructInstance[];
   pointerInstances: PointerInstance[];
   connections: PointerConnection[];
+  stackPointers: StackPointerMetadata[];  // Stack-to-heap pointer arrows
 }
 
 export interface ExecutionStep {

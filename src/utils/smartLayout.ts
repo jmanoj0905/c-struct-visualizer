@@ -14,11 +14,15 @@ import { analyzeGraph } from "./graphAnalysis";
 // ============================================================================
 
 /**
- * Data structure pattern types (minimal set)
+ * Data structure pattern types
  */
 export const StructurePattern = {
+  LINKED_LIST: "LINKED_LIST",
+  CIRCULAR_LINKED_LIST: "CIRCULAR_LINKED_LIST",
+  TREE: "TREE",
   GRAPH_WITH_CYCLES: "GRAPH_WITH_CYCLES",
   HIERARCHICAL: "HIERARCHICAL",
+  ISOLATED: "ISOLATED",
 } as const;
 
 export type StructurePattern =
@@ -53,9 +57,9 @@ interface LayoutConfig {
 const DEFAULT_CONFIG: LayoutConfig = {
   nodeWidth: 350,
   nodeHeight: 250,
-  horizontalSpacing: 200,
-  verticalSpacing: 150,
-  circularRadius: 400,
+  horizontalSpacing: 50,  // Distance between connected nodes
+  verticalSpacing: 50,    // Distance between nodes at same level
+  circularRadius: 200,
 };
 
 // ============================================================================
@@ -176,6 +180,285 @@ function findPhysicsComponents(
 }
 
 /**
+ * Detect the type of data structure in a component
+ */
+function detectStructurePattern(
+  nodeIds: Set<string>,
+  connections: PointerConnection[],
+): StructurePattern {
+  const nodeArray = Array.from(nodeIds);
+  const nodeCount = nodeArray.length;
+
+  if (nodeCount === 0) return StructurePattern.ISOLATED;
+  if (nodeCount === 1) return StructurePattern.ISOLATED;
+
+  // Build adjacency maps
+  const outgoingMap = new Map<string, string[]>();
+  const incomingMap = new Map<string, string[]>();
+
+  nodeArray.forEach((id) => {
+    outgoingMap.set(id, []);
+    incomingMap.set(id, []);
+  });
+
+  connections.forEach((conn) => {
+    if (nodeIds.has(conn.sourceInstanceId) && nodeIds.has(conn.targetInstanceId)) {
+      outgoingMap.get(conn.sourceInstanceId)?.push(conn.targetInstanceId);
+      incomingMap.get(conn.targetInstanceId)?.push(conn.sourceInstanceId);
+    }
+  });
+
+  // Check for cycles using visited set
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+
+  function hasCycle(nodeId: string): boolean {
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+
+    const neighbors = outgoingMap.get(nodeId) || [];
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        if (hasCycle(neighbor)) return true;
+      } else if (recursionStack.has(neighbor)) {
+        return true;
+      }
+    }
+
+    recursionStack.delete(nodeId);
+    return false;
+  }
+
+  let hasAnyCycle = false;
+  for (const nodeId of nodeArray) {
+    if (!visited.has(nodeId)) {
+      if (hasCycle(nodeId)) {
+        hasAnyCycle = true;
+        break;
+      }
+    }
+  }
+
+  // Check if it's a linked list (each node has at most 1 outgoing, at most 1 incoming)
+  let isLinkedList = true;
+  for (const nodeId of nodeArray) {
+    const outCount = outgoingMap.get(nodeId)?.length || 0;
+    const inCount = incomingMap.get(nodeId)?.length || 0;
+    if (outCount > 1 || inCount > 1) {
+      isLinkedList = false;
+      break;
+    }
+  }
+
+  if (isLinkedList && hasAnyCycle) {
+    return StructurePattern.CIRCULAR_LINKED_LIST;
+  }
+
+  if (isLinkedList && !hasAnyCycle) {
+    return StructurePattern.LINKED_LIST;
+  }
+
+  // Check if it's a tree (no cycles, one root, all others have exactly 1 parent)
+  if (!hasAnyCycle) {
+    const rootCount = nodeArray.filter(
+      (id) => (incomingMap.get(id)?.length || 0) === 0
+    ).length;
+    if (rootCount === 1) {
+      const allOthersHaveOneParent = nodeArray.every(
+        (id) =>
+          (incomingMap.get(id)?.length || 0) === 1 ||
+          (incomingMap.get(id)?.length || 0) === 0
+      );
+      if (allOthersHaveOneParent) {
+        return StructurePattern.TREE;
+      }
+    }
+  }
+
+  // Check if it's hierarchical (no cycles, possibly multiple roots)
+  if (!hasAnyCycle) {
+    return StructurePattern.HIERARCHICAL;
+  }
+
+  // Graph with cycles
+  return StructurePattern.GRAPH_WITH_CYCLES;
+}
+
+/**
+ * Layout linked list horizontally (left to right)
+ */
+function layoutLinkedList(
+  nodeIds: Set<string>,
+  connections: PointerConnection[],
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const nodeArray = Array.from(nodeIds);
+
+  // Build adjacency map
+  const outgoingMap = new Map<string, string[]>();
+  nodeArray.forEach((id) => outgoingMap.set(id, []));
+  connections.forEach((conn) => {
+    if (nodeIds.has(conn.sourceInstanceId) && nodeIds.has(conn.targetInstanceId)) {
+      outgoingMap.get(conn.sourceInstanceId)?.push(conn.targetInstanceId);
+    }
+  });
+
+  // Find head (node with no incoming edges)
+  const incomingSet = new Set<string>();
+  connections.forEach((conn) => {
+    if (nodeIds.has(conn.targetInstanceId)) {
+      incomingSet.add(conn.targetInstanceId);
+    }
+  });
+
+  let current = nodeArray.find((id) => !incomingSet.has(id)) || nodeArray[0];
+  let index = 0;
+  const visited = new Set<string>();
+
+  // Traverse linked list and position horizontally
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    const x = index * (DEFAULT_CONFIG.nodeWidth + DEFAULT_CONFIG.horizontalSpacing);
+    const y = 0;
+    positions.set(current, { x, y });
+
+    const nextNodes = outgoingMap.get(current) || [];
+    current = nextNodes[0];
+    index++;
+  }
+
+  // Handle any isolated nodes
+  nodeArray.forEach((nodeId) => {
+    if (!positions.has(nodeId)) {
+      positions.set(nodeId, {
+        x: index * (DEFAULT_CONFIG.nodeWidth + DEFAULT_CONFIG.horizontalSpacing),
+        y: DEFAULT_CONFIG.verticalSpacing,
+      });
+      index++;
+    }
+  });
+
+  return positions;
+}
+
+/**
+ * Layout circular linked list - cycle nodes in circle
+ */
+function layoutCircularLinkedList(
+  nodeIds: Set<string>,
+  connections: PointerConnection[],
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const nodeArray = Array.from(nodeIds);
+
+  // Build adjacency map
+  const outgoingMap = new Map<string, string[]>();
+  nodeArray.forEach((id) => outgoingMap.set(id, []));
+  connections.forEach((conn) => {
+    if (nodeIds.has(conn.sourceInstanceId) && nodeIds.has(conn.targetInstanceId)) {
+      outgoingMap.get(conn.sourceInstanceId)?.push(conn.targetInstanceId);
+    }
+  });
+
+  // Find all cycle nodes by traversing
+  const visited = new Set<string>();
+  const cycleNodes: string[] = [];
+  let current = nodeArray[0];
+
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    cycleNodes.push(current);
+    const nextNodes = outgoingMap.get(current) || [];
+    current = nextNodes[0];
+  }
+
+  // Position cycle nodes in a circle
+  const n = cycleNodes.length;
+  const radius = Math.max(n * 80, 200); // Dynamic radius based on node count
+
+  cycleNodes.forEach((nodeId, i) => {
+    const angle = (i / n) * 2 * Math.PI;
+    const x = radius * Math.cos(angle);
+    const y = radius * Math.sin(angle);
+    positions.set(nodeId, { x, y });
+  });
+
+  return positions;
+}
+
+/**
+ * Layout tree structure - parents left of children
+ */
+function layoutTree(
+  nodeIds: Set<string>,
+  connections: PointerConnection[],
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const nodeArray = Array.from(nodeIds);
+
+  // Build adjacency maps
+  const outgoingMap = new Map<string, string[]>();
+  const incomingMap = new Map<string, string[]>();
+  nodeArray.forEach((id) => {
+    outgoingMap.set(id, []);
+    incomingMap.set(id, []);
+  });
+
+  connections.forEach((conn) => {
+    if (nodeIds.has(conn.sourceInstanceId) && nodeIds.has(conn.targetInstanceId)) {
+      outgoingMap.get(conn.sourceInstanceId)?.push(conn.targetInstanceId);
+      incomingMap.get(conn.targetInstanceId)?.push(conn.sourceInstanceId);
+    }
+  });
+
+  // Find root (node with no incoming edges)
+  const root = nodeArray.find((id) => (incomingMap.get(id)?.length || 0) === 0) || nodeArray[0];
+
+  // Calculate subtree sizes and assign positions
+  const subtreeSizes = new Map<string, number>();
+
+  function calculateSubtreeSize(nodeId: string): number {
+    const children = outgoingMap.get(nodeId) || [];
+    let size = 1; // Current node
+    children.forEach((child) => {
+      size += calculateSubtreeSize(child);
+    });
+    subtreeSizes.set(nodeId, size);
+    return size;
+  }
+
+  calculateSubtreeSize(root);
+
+  // Position nodes - parents left of children
+  function positionNode(nodeId: string, depth: number, yOffset: number): number {
+    const children = outgoingMap.get(nodeId) || [];
+    const nodeHeight = DEFAULT_CONFIG.nodeHeight + DEFAULT_CONFIG.verticalSpacing;
+
+    // Calculate total height needed for this subtree
+    const totalHeight = (subtreeSizes.get(nodeId) || 1) * nodeHeight;
+    const y = yOffset + totalHeight / 2 - nodeHeight / 2;
+
+    // Position this node at the appropriate depth
+    const x = depth * (DEFAULT_CONFIG.nodeWidth + DEFAULT_CONFIG.horizontalSpacing);
+    positions.set(nodeId, { x, y });
+
+    // Position children
+    let currentYOffset = yOffset;
+    children.forEach((child) => {
+      const childHeight = (subtreeSizes.get(child) || 1) * nodeHeight;
+      positionNode(child, depth + 1, currentYOffset);
+      currentYOffset += childHeight;
+    });
+
+    return totalHeight;
+  }
+
+  positionNode(root, 0, 0);
+
+  return positions;
+}
+
+/**
  * Simple layout: hierarchical for linear structures, circular for cycles
  */
 function layoutComponentSimple(
@@ -188,28 +471,36 @@ function layoutComponentSimple(
     (c) => nodeIds.has(c.sourceInstanceId) && nodeIds.has(c.targetInstanceId),
   );
 
-  // Check if component has cycles
-  const graphMetrics = analyzeGraph(
-    Array.from(nodeIds).map((id) => ({ id }) as StructInstance),
-    componentConnections,
-  );
+  // Detect the structure pattern
+  const pattern = detectStructurePattern(nodeIds, componentConnections);
 
-  const hasCycles = graphMetrics.sccs.some((scc) => scc.ids.size > 1);
+  switch (pattern) {
+    case StructurePattern.LINKED_LIST:
+      return layoutLinkedList(nodeIds, componentConnections);
 
-  // If no cycles: use horizontal hierarchy
-  if (!hasCycles) {
-    return layoutHierarchical(nodeIds, componentConnections);
+    case StructurePattern.CIRCULAR_LINKED_LIST:
+      return layoutCircularLinkedList(nodeIds, componentConnections);
+
+    case StructurePattern.TREE:
+      return layoutTree(nodeIds, componentConnections);
+
+    case StructurePattern.HIERARCHICAL:
+      return layoutHierarchical(nodeIds, componentConnections);
+
+    case StructurePattern.GRAPH_WITH_CYCLES:
+      return layoutGraphWithCycles(
+        { nodeIds, pattern: StructurePattern.GRAPH_WITH_CYCLES },
+        instances,
+        connections,
+        structDefinitions,
+        new Map(),
+        DEFAULT_CONFIG,
+      );
+
+    case StructurePattern.ISOLATED:
+    default:
+      return layoutHierarchical(nodeIds, componentConnections);
   }
-
-  // If cycles: use hybrid (cycles in circle, rest hierarchical)
-  return layoutGraphWithCycles(
-    { nodeIds, pattern: StructurePattern.GRAPH_WITH_CYCLES },
-    instances,
-    connections,
-    structDefinitions,
-    new Map(),
-    DEFAULT_CONFIG,
-  );
 }
 
 /**
@@ -272,19 +563,18 @@ function layoutHierarchical(
     layers[depth].push(id);
   });
 
-  // Position nodes
-  const HORIZONTAL_SPACING = 550;
-  const VERTICAL_SPACING = 200;
-  const NODE_HEIGHT = 250;
+  // Position nodes using config spacing
+  const HORIZONTAL_SPACING = DEFAULT_CONFIG.nodeWidth + DEFAULT_CONFIG.horizontalSpacing;
+  const VERTICAL_SPACING = DEFAULT_CONFIG.nodeHeight + DEFAULT_CONFIG.verticalSpacing;
 
   layers.forEach((layer, layerIndex) => {
     const x = layerIndex * HORIZONTAL_SPACING;
-    const totalHeight = layer.length * NODE_HEIGHT + (layer.length - 1) * VERTICAL_SPACING;
+    const totalHeight = layer.length * DEFAULT_CONFIG.nodeHeight + (layer.length - 1) * DEFAULT_CONFIG.verticalSpacing;
     let y = -totalHeight / 2;
 
     layer.forEach((nodeId) => {
       positions.set(nodeId, { x, y });
-      y += NODE_HEIGHT + VERTICAL_SPACING;
+      y += VERTICAL_SPACING;
     });
   });
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Plus, Copy, Edit2, XCircle, ChevronRight, Code } from "lucide-react";
+import { X, Plus, Copy, Edit2, XCircle, ChevronRight, Code, Menu } from "lucide-react";
 import { useCanvasStore } from "../store/canvasStore";
 import { UI_COLORS } from "../utils/colors";
 import { showAlert } from "./AlertContainer";
@@ -7,7 +7,7 @@ import ModeSelectionDialog from "./ModeSelectionDialog";
 
 const WS_KEY = "c-struct-workspace-";
 
-const WorkspaceTabBar = () => {
+const WorkspaceTabBar = ({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) => {
   const {
     workspaceTabs,
     activeWorkspaceId,
@@ -200,6 +200,9 @@ const WorkspaceTabBar = () => {
                 {tab.mode === "visualizer" && (
                   <Code size={10} className="flex-shrink-0 text-emerald-600" />
                 )}
+                {tab.language === "cpp" && (
+                  <span className="text-[9px] font-heading text-purple-600 bg-purple-100 px-1 rounded flex-shrink-0">C++</span>
+                )}
                 {isRenaming ? (
                   <input
                     ref={renameInputRef}
@@ -254,6 +257,15 @@ const WorkspaceTabBar = () => {
             <Plus size={14} className="text-gray-500" />
           </button>
         </div>
+
+        {/* Menu button - pinned right */}
+        <button
+          onClick={onOpenCommandPalette}
+          className="w-7 h-full flex-shrink-0 flex items-center justify-center hover:bg-gray-100 transition-colors border-l-2 border-black"
+          title="Menu"
+        >
+          <Menu size={14} className="text-gray-600" />
+        </button>
       </div>
 
       {/* Context menu */}

@@ -16,6 +16,10 @@ const KEYWORDS = new Set([
   "struct", "typedef", "if", "else", "while", "for", "do", "return",
   "break", "continue", "sizeof", "NULL", "switch", "case", "default",
   "const", "static", "enum",
+  // C++ keywords
+  "class", "public", "private", "protected", "virtual", "override", "final",
+  "nullptr", "new", "delete", "this", "bool", "true", "false", "using", "namespace",
+  "cout", "cin", "endl", "string", "vector",
 ]);
 
 const MULTI_CHAR_PUNCTS = ["->", "++", "--", "<=", ">=", "==", "!=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "<<", ">>"];

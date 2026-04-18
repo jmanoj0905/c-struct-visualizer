@@ -55,6 +55,7 @@ const MenubarSubTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       "flex cursor-default select-none items-center rounded-base border-2 border-transparent px-3 py-1.5 text-sm font-base outline-hidden focus:border-border data-[state=open]:border-border data-[inset]:pl-8",
+      inset && "data-[inset]:pl-8",
       className
     )}
     {...props}
@@ -115,6 +116,7 @@ const MenubarItem = React.forwardRef<
     ref={ref}
     className={cn(
       "relative flex cursor-default select-none items-center rounded-base border-2 border-transparent px-2 py-1.5 text-sm font-base outline-hidden focus:border-border data-disabled:pointer-events-none data-disabled:opacity-50 data-[inset]:pl-8",
+      inset && "data-[inset]:pl-8",
       className
     )}
     {...props}
@@ -177,6 +179,7 @@ const MenubarLabel = React.forwardRef<
     ref={ref}
     className={cn(
       "px-2 py-1.5 text-sm font-heading text-main-foreground data-[inset]:pl-8",
+      inset && "data-[inset]:pl-8",
       className
     )}
     {...props}

@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 import { useCanvasStore } from "../store/canvasStore";
-import { Trash2, Edit2, Check } from "lucide-react";
+import { Trash2, Edit2, Check, Lock, ShieldCheck } from "lucide-react";
 import { getStructColor, UI_COLORS } from "../utils/colors";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -19,11 +19,15 @@ interface StructNodeData {
     arraySize?: number;
     pointerLevel?: number;
     isFunctionPointer?: boolean;
+    accessLevel?: "public" | "private" | "protected";
+    isStatic?: boolean;
   }>;
   fieldValues?: Record<string, unknown>;
   connectedFields?: string[];
   pointerFieldAddresses?: Record<string, string>;
   readOnly?: boolean;
+  isClass?: boolean;
+  methods?: Array<{ name: string; returnType: string; accessLevel: string; isVirtual: boolean; isConstructor: boolean; isDestructor: boolean }>;
 }
 
 function StructNode({ data, selected }: { data: StructNodeData; selected?: boolean }) {
@@ -108,8 +112,16 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
         style={{ backgroundColor: structColor }}
       >
         <div className="flex-1">
-          <div className="text-xs font-heading font-mono">
+          <div className="text-xs font-heading font-mono flex items-center gap-1.5">
             {data.structName}
+            {data.isClass && (
+              <span
+                className="text-[9px] border border-black/40 px-1 py-0 rounded font-heading"
+                style={{ backgroundColor: "rgba(0,0,0,0.08)" }}
+              >
+                class
+              </span>
+            )}
           </div>
           {!readOnly && isEditingName ? (
             <div className="flex items-center gap-2">
@@ -166,7 +178,7 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
 
       {/* Fields */}
       <div className="p-2 space-y-2">
-        {data.fields.map((field) => {
+        {data.fields.filter(f => f.name !== "__vptr").map((field) => {
           const fieldValue = resolvedFieldValues[field.name];
           const fieldValueStr =
             typeof fieldValue === "string" ? fieldValue : "";
@@ -196,10 +208,22 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
                 />
               )}
               {/* Field Row */}
-              <div className="flex items-start gap-2 bg-white border-2 border-black p-2 rounded-base shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              <div
+                className="flex items-start gap-2 border-2 border-black p-2 rounded-base shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                style={{
+                  backgroundColor: field.accessLevel === "protected" ? "#f0f4ff" : "white",
+                }}
+              >
                 {/* Field name and type */}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
+                    {/* Access level badge */}
+                    {field.accessLevel === "private" && (
+                      <span title="private"><Lock size={11} className="text-red-500 flex-shrink-0" /></span>
+                    )}
+                    {field.accessLevel === "protected" && (
+                      <span title="protected / inherited"><ShieldCheck size={11} className="text-amber-500 flex-shrink-0" /></span>
+                    )}
                     <span className="font-heading text-base tracking-tight">
                       {field.name}
                     </span>
@@ -431,6 +455,25 @@ function StructNode({ data, selected }: { data: StructNodeData; selected?: boole
           );
         })}
       </div>
+
+      {/* Methods section (C++ classes only) */}
+      {data.methods && data.methods.length > 0 && (
+        <div className="border-t-2 border-black px-3 py-1.5">
+          <div className="text-[10px] font-heading text-gray-500 mb-1">Methods</div>
+          <div className="space-y-0.5">
+            {data.methods.map((m) => (
+              <div key={m.name} className="text-[11px] font-mono text-gray-600 flex items-center gap-1">
+                {m.accessLevel === "private" && <Lock size={9} className="text-red-400" />}
+                {m.accessLevel === "protected" && <ShieldCheck size={9} className="text-amber-400" />}
+                {m.isVirtual && <span className="text-purple-500 text-[9px]">v</span>}
+                <span>
+                  {m.isConstructor ? m.name + "()" : m.isDestructor ? m.name + "()" : `${m.returnType} ${m.name}()`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

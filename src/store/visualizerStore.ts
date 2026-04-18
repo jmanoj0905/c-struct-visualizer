@@ -5,7 +5,7 @@ import { mapHeapToReactFlow } from "../engine/heapMapper";
 
 const VIS_KEY = "c-struct-vis-ws-";
 
-const SAMPLE_CODE = `#include <stdio.h>
+const C_SAMPLE_CODE = `#include <stdio.h>
 #include <stdlib.h>
 
 struct Node {
@@ -30,14 +30,52 @@ int main() {
 }
 `;
 
+const CPP_SAMPLE_CODE = `#include <stdio.h>
+
+class Node {
+public:
+    int data;
+    Node* next;
+
+    Node(int d) : data(d), next(nullptr) {}
+};
+
+int main() {
+    Node* head = new Node(10);
+    head->next = new Node(20);
+    head->next->next = new Node(30);
+
+    Node* curr = head;
+    while (curr != nullptr) {
+        printf("%d ", curr->data);
+        curr = curr->next;
+    }
+    printf("\\n");
+
+    // Cleanup
+    while (head != nullptr) {
+        Node* temp = head;
+        head = head->next;
+        delete temp;
+    }
+    return 0;
+}
+`;
+
+export const SAMPLE_CODES = {
+  c: C_SAMPLE_CODE,
+  cpp: CPP_SAMPLE_CODE,
+} as const;
+
+const SAMPLE_CODE = C_SAMPLE_CODE;
+
 interface VisualizerState {
   code: string;
-  stdinInput: string;
   trace: ExecutionStep[] | null;
   traceError: string | null;
   currentStepIndex: number;
   isTracing: boolean;
-  selectedLine: number | null;
+  selectedLines: number[];
 
   // Derived from trace[currentStepIndex]
   consoleOutput: string;
@@ -47,8 +85,9 @@ interface VisualizerState {
 
   // Actions
   setCode: (code: string) => void;
-  setStdinInput: (input: string) => void;
-  setSelectedLine: (line: number | null) => void;
+  toggleSelectedLine: (line: number) => void;
+  clearSelectedLines: () => void;
+  loadSample: (lang: "c" | "cpp") => void;
   runTrace: () => void;
   stopExecution: () => void;
   goToStep: (index: number) => void;
@@ -57,10 +96,19 @@ interface VisualizerState {
   goNext: () => void;
   goLast: () => void;
 
+  // Hover state for stack→heap arrows
+  hoveredPointerId: string | null;
+  setHoveredPointerId: (id: string | null) => void;
+
+  // Selected frame for highlighting pointers from specific function
+  selectedFrameIndex: number | null;
+  setSelectedFrame: (index: number | null) => void;
+  clearSelectedFrame: () => void;
+
   // Persistence
   saveSnapshot: (workspaceId: string) => void;
-  loadSnapshot: (workspaceId: string) => void;
-  clearState: () => void;
+  loadSnapshot: (workspaceId: string, language?: "c" | "cpp") => void;
+  clearState: (language?: "c" | "cpp") => void;
 }
 
 function deriveFromStep(step: ExecutionStep | null) {
@@ -73,7 +121,7 @@ function deriveFromStep(step: ExecutionStep | null) {
     };
   }
 
-  const heapState = mapHeapToReactFlow(step.heapObjects, step.stackVariables);
+  const heapState = mapHeapToReactFlow(step.heapObjects, step.stackVariables, step.callStack);
 
   return {
     consoleOutput: step.consoleOutput,
@@ -85,27 +133,43 @@ function deriveFromStep(step: ExecutionStep | null) {
 
 export const useVisualizerStore = create<VisualizerState>()((set, get) => ({
   code: SAMPLE_CODE,
-  stdinInput: "",
   trace: null,
   traceError: null,
   currentStepIndex: 0,
   isTracing: false,
-  selectedLine: null,
+  selectedLines: [],
 
   consoleOutput: "",
   variables: [],
   callStack: [],
   heapState: null,
+  hoveredPointerId: null,
+  selectedFrameIndex: null,
 
   setCode: (code: string) => set({ code }),
-  setStdinInput: (input: string) => set({ stdinInput: input }),
-  setSelectedLine: (line: number | null) => set({ selectedLine: line }),
+  setHoveredPointerId: (id: string | null) => set({ hoveredPointerId: id }),
+  setSelectedFrame: (index: number | null) => set({ selectedFrameIndex: index }),
+  clearSelectedFrame: () => set({ selectedFrameIndex: null }),
+  toggleSelectedLine: (line: number) =>
+    set((s) => ({
+      selectedLines: s.selectedLines.includes(line)
+        ? s.selectedLines.filter((l) => l !== line)
+        : [...s.selectedLines, line],
+    })),
+  clearSelectedLines: () => set({ selectedLines: [] }),
+  loadSample: (lang: "c" | "cpp") => set({
+    code: SAMPLE_CODES[lang],
+    trace: null,
+    traceError: null,
+    currentStepIndex: 0,
+    ...deriveFromStep(null),
+  }),
 
   runTrace: () => {
-    const { code, stdinInput } = get();
+    const { code } = get();
     set({ isTracing: true, traceError: null });
 
-    computeTrace(code, stdinInput).then((result) => {
+    computeTrace(code, "").then((result) => {
       if (result.error && result.steps.length === 0) {
         set({
           trace: null,
@@ -142,7 +206,7 @@ export const useVisualizerStore = create<VisualizerState>()((set, get) => ({
       traceError: null,
       currentStepIndex: 0,
       isTracing: false,
-      selectedLine: null,
+      selectedLines: [],
       ...deriveFromStep(null),
     });
   },
@@ -153,91 +217,88 @@ export const useVisualizerStore = create<VisualizerState>()((set, get) => ({
     const clampedIndex = Math.max(0, Math.min(index, trace.length - 1));
     set({
       currentStepIndex: clampedIndex,
+      selectedFrameIndex: null,
       ...deriveFromStep(trace[clampedIndex]),
     });
   },
 
   goFirst: () => {
-    const { trace, selectedLine } = get();
+    const { trace, selectedLines } = get();
     if (!trace || trace.length === 0) return;
-    if (selectedLine != null) {
-      const idx = trace.findIndex((s) => s.line === selectedLine);
+    if (selectedLines.length > 0) {
+      const idx = trace.findIndex((s) => selectedLines.includes(s.line));
       if (idx !== -1) {
-        set({ currentStepIndex: idx, ...deriveFromStep(trace[idx]) });
+        set({ currentStepIndex: idx, selectedFrameIndex: null, ...deriveFromStep(trace[idx]) });
         return;
       }
     }
-    set({ currentStepIndex: 0, ...deriveFromStep(trace[0]) });
+    set({ currentStepIndex: 0, selectedFrameIndex: null, ...deriveFromStep(trace[0]) });
   },
 
   goPrev: () => {
-    const { trace, currentStepIndex, selectedLine } = get();
+    const { trace, currentStepIndex, selectedLines } = get();
     if (!trace || currentStepIndex <= 0) return;
-    if (selectedLine != null) {
-      // Find the previous step that matches the selected line
+    if (selectedLines.length > 0) {
       for (let i = currentStepIndex - 1; i >= 0; i--) {
-        if (trace[i].line === selectedLine) {
-          set({ currentStepIndex: i, ...deriveFromStep(trace[i]) });
+        if (selectedLines.includes(trace[i].line)) {
+          set({ currentStepIndex: i, selectedFrameIndex: null, ...deriveFromStep(trace[i]) });
           return;
         }
       }
-      // No previous highlighted step — fall through to normal prev
     }
     const newIndex = currentStepIndex - 1;
-    set({ currentStepIndex: newIndex, ...deriveFromStep(trace[newIndex]) });
+    set({ currentStepIndex: newIndex, selectedFrameIndex: null, ...deriveFromStep(trace[newIndex]) });
   },
 
   goNext: () => {
-    const { trace, currentStepIndex, selectedLine } = get();
+    const { trace, currentStepIndex, selectedLines } = get();
     if (!trace || currentStepIndex >= trace.length - 1) return;
-    if (selectedLine != null) {
-      // Find the next step that matches the selected line
+    if (selectedLines.length > 0) {
       for (let i = currentStepIndex + 1; i < trace.length; i++) {
-        if (trace[i].line === selectedLine) {
-          set({ currentStepIndex: i, ...deriveFromStep(trace[i]) });
+        if (selectedLines.includes(trace[i].line)) {
+          set({ currentStepIndex: i, selectedFrameIndex: null, ...deriveFromStep(trace[i]) });
           return;
         }
       }
-      // No next highlighted step — fall through to normal next
     }
     const newIndex = currentStepIndex + 1;
-    set({ currentStepIndex: newIndex, ...deriveFromStep(trace[newIndex]) });
+    set({ currentStepIndex: newIndex, selectedFrameIndex: null, ...deriveFromStep(trace[newIndex]) });
   },
 
   goLast: () => {
-    const { trace, selectedLine } = get();
+    const { trace, selectedLines } = get();
     if (!trace || trace.length === 0) return;
-    if (selectedLine != null) {
+    if (selectedLines.length > 0) {
       for (let i = trace.length - 1; i >= 0; i--) {
-        if (trace[i].line === selectedLine) {
-          set({ currentStepIndex: i, ...deriveFromStep(trace[i]) });
+        if (selectedLines.includes(trace[i].line)) {
+          set({ currentStepIndex: i, selectedFrameIndex: null, ...deriveFromStep(trace[i]) });
           return;
         }
       }
     }
     const lastIndex = trace.length - 1;
-    set({ currentStepIndex: lastIndex, ...deriveFromStep(trace[lastIndex]) });
+    set({ currentStepIndex: lastIndex, selectedFrameIndex: null, ...deriveFromStep(trace[lastIndex]) });
   },
 
   saveSnapshot: (workspaceId: string) => {
-    const { code, stdinInput, currentStepIndex } = get();
+    const { code, currentStepIndex } = get();
     try {
       localStorage.setItem(
         VIS_KEY + workspaceId,
-        JSON.stringify({ code, stdinInput, currentStepIndex }),
+        JSON.stringify({ code, currentStepIndex }),
       );
     } catch {
       console.warn("Failed to save visualizer snapshot");
     }
   },
 
-  loadSnapshot: (workspaceId: string) => {
+  loadSnapshot: (workspaceId: string, language?: "c" | "cpp") => {
+    const defaultCode = SAMPLE_CODES[language || "c"];
     try {
       const raw = localStorage.getItem(VIS_KEY + workspaceId);
       if (!raw) {
         set({
-          code: SAMPLE_CODE,
-          stdinInput: "",
+          code: defaultCode,
           trace: null,
           traceError: null,
           currentStepIndex: 0,
@@ -247,8 +308,7 @@ export const useVisualizerStore = create<VisualizerState>()((set, get) => ({
       }
       const data = JSON.parse(raw);
       set({
-        code: data.code || SAMPLE_CODE,
-        stdinInput: data.stdinInput || "",
+        code: data.code || defaultCode,
         trace: null,
         traceError: null,
         currentStepIndex: 0,
@@ -256,8 +316,7 @@ export const useVisualizerStore = create<VisualizerState>()((set, get) => ({
       });
     } catch {
       set({
-        code: SAMPLE_CODE,
-        stdinInput: "",
+        code: defaultCode,
         trace: null,
         traceError: null,
         currentStepIndex: 0,
@@ -266,10 +325,9 @@ export const useVisualizerStore = create<VisualizerState>()((set, get) => ({
     }
   },
 
-  clearState: () => {
+  clearState: (language?: "c" | "cpp") => {
     set({
-      code: SAMPLE_CODE,
-      stdinInput: "",
+      code: SAMPLE_CODES[language || "c"],
       trace: null,
       traceError: null,
       currentStepIndex: 0,

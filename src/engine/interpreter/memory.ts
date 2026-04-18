@@ -28,6 +28,9 @@ interface HeapBlock {
   fields: Map<string, RuntimeValue>;
   freed: boolean;
   structDef?: StructDefNode;
+  className?: string;          // set for C++ class objects
+  hasVtable?: boolean;         // true if object has virtual methods
+  baseClassFields?: string[];  // field names inherited from base class
 }
 
 export class Memory {
@@ -102,6 +105,42 @@ export class Memory {
         };
         block.fields.set(f.name, defaultVal);
       }
+    }
+
+    this.heap.set(addr, block);
+    return addr;
+  }
+
+  mallocObject(
+    className: string,
+    allFields: { name: string; type: CType }[],
+    hasVtable: boolean,
+    baseClassFields?: string[],
+  ): number {
+    let size = 0;
+    for (const f of allFields) size += sizeOfType(f.type, this.structDefs);
+    if (hasVtable) size += 8; // vtable pointer
+    size = Math.max(size, 8);
+
+    const addr = this.allocAddress(size);
+    const block: HeapBlock = {
+      address: addr,
+      typeName: className,
+      isStruct: true,
+      fields: new Map(),
+      freed: false,
+      className,
+      hasVtable,
+      baseClassFields,
+    };
+
+    // Initialize all fields to default values
+    for (const f of allFields) {
+      const defaultVal: RuntimeValue = {
+        value: f.type.pointerLevel > 0 ? null : 0,
+        type: f.type,
+      };
+      block.fields.set(f.name, defaultVal);
     }
 
     this.heap.set(addr, block);
@@ -216,13 +255,17 @@ export class Memory {
           pointsTo: isPointer && fval.value !== null ? (fval.value as number) : undefined,
         };
       }
-      objects.push({
+      const obj: HeapObject = {
         address: block.address,
         typeName: block.typeName,
         isStruct: block.isStruct,
         fields,
         freed: block.freed,
-      });
+      };
+      if (block.className) obj.className = block.className;
+      if (block.hasVtable) obj.hasVtable = true;
+      if (block.baseClassFields) obj.baseClassFields = block.baseClassFields;
+      objects.push(obj);
     }
     return objects;
   }

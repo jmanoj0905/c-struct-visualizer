@@ -1,5 +1,4 @@
-import { X, BookOpen, Grid3x3, Github } from "lucide-react";
-import { useState } from "react";
+import { X, Grid3x3, Github } from "lucide-react";
 import { Button } from "./ui/button";
 import { UI_COLORS } from "../utils/colors";
 
@@ -14,8 +13,6 @@ const Settings = ({
   snapToGrid,
   onSnapToGridChange,
 }: SettingsProps) => {
-  const [showGuide, setShowGuide] = useState(false);
-
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 modal-backdrop">
       <div className="bg-white rounded-base w-full max-w-md mx-4 border-2 border-black shadow-shadow animate-scaleIn">
@@ -35,73 +32,6 @@ const Settings = ({
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {showGuide ? (
-            /* Guide Section */
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-heading tracking-tight">
-                  HOW TO USE
-                </h3>
-                <button
-                  onClick={() => setShowGuide(false)}
-                  className="text-sm font-heading hover:underline"
-                >
-                  Back
-                </button>
-              </div>
-              <div
-                className="border-2 border-black rounded-base p-4 space-y-3 max-h-96 overflow-y-auto"
-                style={{ backgroundColor: UI_COLORS.yellow }}
-              >
-                <div>
-                  <div className="text-sm font-heading mb-1">
-                    1. Define Structs
-                  </div>
-                  <div className="text-sm font-base">
-                    Click the code icon in sidebar to define C structs
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm font-heading mb-1">
-                    2. Add Instances
-                  </div>
-                  <div className="text-sm font-base">
-                    Drag structs from sidebar or double-click to add to canvas
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm font-heading mb-1">
-                    3. Connect Pointers
-                  </div>
-                  <div className="text-sm font-base">
-                    Drag from right handles (pointers) to left handles (targets)
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm font-heading mb-1">
-                    4. Quick Connect
-                  </div>
-                  <div className="text-sm font-base">
-                    Drag pointer to empty space, search struct, press Enter
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm font-heading mb-1">5. Organize</div>
-                  <div className="text-sm font-base">
-                    Click sparkle icon to auto-layout your structures
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm font-heading mb-1">6. Export</div>
-                  <div className="text-sm font-base">
-                    Click download icon in sidebar to save as PNG
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Main Settings */
-            <>
               {/* Snap to Grid Toggle */}
               <div>
                 <h3 className="text-sm font-heading tracking-tight mb-3">
@@ -133,21 +63,6 @@ const Settings = ({
                     />
                   </button>
                 </div>
-              </div>
-
-              {/* How to Use Button */}
-              <div>
-                <h3 className="text-sm font-heading tracking-tight mb-3">
-                  HELP
-                </h3>
-                <Button
-                  onClick={() => setShowGuide(true)}
-                  className="w-full"
-                  style={{ backgroundColor: UI_COLORS.cyan }}
-                >
-                  <BookOpen size={20} strokeWidth={2.5} />
-                  <span>How to Use</span>
-                </Button>
               </div>
 
               {/* GitHub Repository Link */}
@@ -200,8 +115,6 @@ const Settings = ({
               <div className="text-center">
                 <div className="text-xs font-heading opacity-50">v2.0.0</div>
               </div>
-            </>
-          )}
         </div>
       </div>
     </div>

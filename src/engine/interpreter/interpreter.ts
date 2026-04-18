@@ -2,12 +2,30 @@
 
 import type {
   ASTNode, ExprNode, CType, ProgramNode, FunctionDefNode,
-  StructDefNode, BlockNode,
+  StructDefNode, BlockNode, ClassDefNode, MethodDefNode,
 } from "./ast";
 import { sizeOfType } from "./ast";
 import { Memory, type RuntimeValue } from "./memory";
 import { builtinPrintf, builtinMalloc, builtinFree, builtinScanf } from "./builtins";
 import type { ExecutionStep } from "../../types/visualizer";
+
+interface ClassInfo {
+  name: string;
+  baseClass?: string;
+  fields: { name: string; type: CType; access: string }[];
+  methods: Map<string, MethodInfo>;
+  vtable: Map<string, string>;    // methodName → resolvedClassName
+  constructors: MethodDefNode[];
+  destructor?: MethodDefNode;
+  hasVirtualMethods: boolean;
+}
+
+interface MethodInfo {
+  node: MethodDefNode;
+  access: string;
+  isVirtual: boolean;
+  className: string;
+}
 
 const MAX_STEPS = 10_000;
 
@@ -29,12 +47,15 @@ export class InterpreterError extends Error {
 export class Interpreter {
   private structDefs = new Map<string, StructDefNode>();
   private funcDefs = new Map<string, FunctionDefNode>();
+  private classRegistry = new Map<string, ClassInfo>();
+  private outOfClassMethods: MethodDefNode[] = [];
   private memory!: Memory;
   private steps: ExecutionStep[] = [];
   private consoleOutput = "";
   private stepCount = 0;
   private stdinBuffer = "";
   private sourceLines: string[] = [];
+  private stackAllocatedObjects: { name: string; addr: number; className: string }[] = [];
 
   interpret(program: ProgramNode, source: string, stdin: string): ExecutionStep[] {
     this.steps = [];
@@ -43,12 +64,43 @@ export class Interpreter {
     this.stdinBuffer = stdin;
     this.sourceLines = source.split("\n");
 
-    // Phase 1: Register struct defs and function defs
+    // Phase 1: Register struct defs, class defs, function defs, and out-of-class methods
     for (const node of program.body) {
       if (node.kind === "StructDef") {
         this.structDefs.set(node.name, node);
+      } else if (node.kind === "ClassDef") {
+        this.registerClass(node);
       } else if (node.kind === "FunctionDef") {
         this.funcDefs.set(node.name, node);
+      } else if (node.kind === "MethodDef") {
+        this.outOfClassMethods.push(node as MethodDefNode);
+      }
+    }
+
+    // Register out-of-class method bodies into their classes
+    for (const method of this.outOfClassMethods) {
+      const classInfo = this.classRegistry.get(method.className);
+      if (classInfo) {
+        if (method.isConstructor) {
+          // Replace or add constructor
+          const existing = classInfo.constructors.findIndex(c => c.params.length === method.params.length);
+          if (existing >= 0) classInfo.constructors[existing] = method;
+          else classInfo.constructors.push(method);
+        } else if (method.isDestructor) {
+          classInfo.destructor = method;
+        } else {
+          const info = classInfo.methods.get(method.name);
+          if (info) {
+            info.node = method; // replace declaration with definition
+          } else {
+            classInfo.methods.set(method.name, {
+              node: method,
+              access: "public",
+              isVirtual: method.isVirtual,
+              className: method.className,
+            });
+          }
+        }
       }
     }
 
@@ -108,6 +160,7 @@ export class Interpreter {
 
   private callFunction(func: FunctionDefNode, args: RuntimeValue[]): RuntimeValue {
     this.memory.pushScope(func.name, func.line);
+    const stackObjsBefore = this.stackAllocatedObjects.length;
 
     // Bind parameters
     for (let i = 0; i < func.params.length; i++) {
@@ -120,15 +173,30 @@ export class Interpreter {
       this.execBlock(func.body);
     } catch (e) {
       if (e instanceof ReturnSignal) {
+        this.destroyStackObjects(stackObjsBefore, func.line);
         this.memory.popScope();
         return e.value;
       }
+      this.destroyStackObjects(stackObjsBefore, func.line);
       this.memory.popScope();
       throw e;
     }
 
+    this.destroyStackObjects(stackObjsBefore, func.line);
     this.memory.popScope();
     return { value: 0, type: func.returnType };
+  }
+
+  private destroyStackObjects(fromIndex: number, line: number) {
+    // Destroy in reverse order (LIFO)
+    while (this.stackAllocatedObjects.length > fromIndex) {
+      const obj = this.stackAllocatedObjects.pop()!;
+      const classInfo = this.classRegistry.get(obj.className);
+      if (classInfo) {
+        this.callDestructorChain(obj.addr, classInfo, line);
+      }
+      this.memory.free(obj.addr);
+    }
   }
 
   private execBlock(block: BlockNode) {
@@ -213,6 +281,10 @@ export class Interpreter {
       case "Block":
         this.execBlock(node);
         break;
+      case "StructDef":
+      case "ClassDef":
+        // Already registered in interpret() phase 1
+        break;
       case "BreakStmt":
         this.recordStep(node.line);
         throw new BreakSignal();
@@ -225,6 +297,37 @@ export class Interpreter {
   }
 
   private execVarDecl(node: ASTNode & { kind: "VarDecl" }) {
+    // Stack-allocated class object: allocate on heap, call constructor, store address
+    if (node.varType.pointerLevel === 0 && node.varType.isStruct) {
+      const classInfo = this.classRegistry.get(node.varType.base);
+      if (classInfo) {
+        const addr = this.memory.mallocObject(
+          node.varType.base,
+          classInfo.fields.map(f => ({ name: f.name, type: f.type })),
+          classInfo.hasVirtualMethods,
+          classInfo.baseClass
+            ? this.classRegistry.get(classInfo.baseClass)?.fields.map(f => f.name)
+            : undefined,
+        );
+
+        // Call default constructor if available
+        if (classInfo.constructors.length > 0) {
+          const ctor = classInfo.constructors.find(c => c.params.length === 0)
+            || classInfo.constructors[0];
+          if (ctor) {
+            this.callMethod(addr, node.varType.base, ctor, [], node.line);
+          }
+        }
+
+        const val: RuntimeValue = { value: addr, type: node.varType };
+        this.memory.declareVar(node.name, node.varType, val);
+
+        // Track for destructor call on scope exit
+        this.stackAllocatedObjects.push({ name: node.name, addr, className: node.varType.base });
+        return;
+      }
+    }
+
     let initVal: RuntimeValue | undefined;
     if (node.init) {
       if (node.init.kind === "CallExpr" && node.init.callee === "__array_init") {
@@ -275,8 +378,26 @@ export class Interpreter {
         return { value: null, type: { base: "void", pointerLevel: 1, isStruct: false } };
 
       case "Identifier": {
+        // C++ special identifiers
+        if (expr.name === "endl") {
+          const rv: RuntimeValue = { value: 0, type: { base: "char", pointerLevel: 1, isStruct: false } };
+          (rv as unknown as { __str: string }).__str = "\n";
+          return rv;
+        }
+        if (expr.name === "cout") {
+          return { value: 0, type: { base: "__cout", pointerLevel: 0, isStruct: false } };
+        }
+        if (expr.name === "cin") {
+          return { value: 0, type: { base: "__cin", pointerLevel: 0, isStruct: false } };
+        }
         const val = this.memory.getVar(expr.name);
         if (val === undefined) {
+          // Check if we're inside a method and this is a field access via implicit `this`
+          const thisPtr = this.memory.getVar("this");
+          if (thisPtr && thisPtr.value !== null) {
+            const field = this.memory.getHeapField(thisPtr.value as number, expr.name);
+            if (field) return { ...field, address: thisPtr.value as number };
+          }
           throw new InterpreterError(`Undefined variable '${expr.name}'`, expr.line);
         }
         return val;
@@ -294,6 +415,45 @@ export class Interpreter {
       }
 
       case "BinaryExpr": {
+        // C++ cout << expr
+        if (expr.op === "<<") {
+          const left = this.evalExpr(expr.left);
+          // Check if left is cout (identifier) or a previous cout << result
+          const isCout = (expr.left.kind === "Identifier" && expr.left.name === "cout")
+            || (left.type.base === "__cout");
+          if (isCout) {
+            const right = this.evalExpr(expr.right);
+            if (typeof (right as unknown as { __str: string }).__str === "string") {
+              this.consoleOutput += (right as unknown as { __str: string }).__str;
+            } else if (right.type.base === "char" && right.type.pointerLevel === 0) {
+              this.consoleOutput += String.fromCharCode(right.value as number);
+            } else {
+              this.consoleOutput += String(right.value ?? "");
+            }
+            // Return a cout-type so chained << keeps working
+            return { value: 0, type: { base: "__cout", pointerLevel: 0, isStruct: false } };
+          }
+        }
+        // C++ cin >> var
+        if (expr.op === ">>") {
+          const left = this.evalExpr(expr.left);
+          const isCin = (expr.left.kind === "Identifier" && expr.left.name === "cin")
+            || (left.type.base === "__cin");
+          if (isCin) {
+            // Read a value from stdin
+            let inputVal = "";
+            const nl = this.stdinBuffer.indexOf("\n");
+            const space = this.stdinBuffer.search(/\s/);
+            const sepIdx = space >= 0 ? space : (nl >= 0 ? nl : this.stdinBuffer.length);
+            inputVal = this.stdinBuffer.substring(0, sepIdx).trim();
+            this.stdinBuffer = this.stdinBuffer.substring(sepIdx).replace(/^\s/, "");
+
+            const numVal = Number(inputVal);
+            const val: RuntimeValue = { value: isNaN(numVal) ? 0 : numVal, type: intType() };
+            this.evalAssign(expr.right, val);
+            return { value: 0, type: { base: "__cin", pointerLevel: 0, isStruct: false } };
+          }
+        }
         // Short-circuit for && and ||
         if (expr.op === "&&") {
           const left = this.evalExpr(expr.left);
@@ -387,7 +547,12 @@ export class Interpreter {
 
       case "MemberExpr": {
         const obj = this.evalExpr(expr.object);
-        // If object is a heap reference
+        // Stack-allocated class object: value is the heap address holding fields
+        if (obj.type.pointerLevel === 0 && obj.type.isStruct && typeof obj.value === "number") {
+          const field = this.memory.getHeapField(obj.value, expr.field);
+          if (field) return { ...field, address: obj.value };
+        }
+        // If object is a heap reference (e.g., dereferenced pointer)
         if (obj.address !== undefined) {
           const field = this.memory.getHeapField(obj.address, expr.field);
           if (field) return { ...field, address: obj.address };
@@ -439,6 +604,18 @@ export class Interpreter {
 
   private evalAssign(target: ExprNode, value: RuntimeValue): RuntimeValue {
     if (target.kind === "Identifier") {
+      const existing = this.memory.getVar(target.name);
+      if (existing === undefined) {
+        // Check if this is an implicit `this->field` assignment
+        const thisPtr = this.memory.getVar("this");
+        if (thisPtr && thisPtr.value !== null) {
+          const field = this.memory.getHeapField(thisPtr.value as number, target.name);
+          if (field) {
+            this.memory.setHeapField(thisPtr.value as number, target.name, value);
+            return value;
+          }
+        }
+      }
       this.memory.setVar(target.name, value);
       return value;
     }
@@ -451,7 +628,10 @@ export class Interpreter {
     }
     if (target.kind === "MemberExpr") {
       const obj = this.evalExpr(target.object);
-      if (obj.address !== undefined) {
+      // Stack-allocated class object: value is the heap address
+      if (obj.type.pointerLevel === 0 && obj.type.isStruct && typeof obj.value === "number") {
+        this.memory.setHeapField(obj.value, target.field, value);
+      } else if (obj.address !== undefined) {
         this.memory.setHeapField(obj.address, target.field, value);
       }
       return value;
@@ -471,6 +651,36 @@ export class Interpreter {
   }
 
   private evalCall(name: string, argExprs: ExprNode[], line: number): RuntimeValue {
+    // Handle C++ new: __new_ClassName
+    if (name.startsWith("__new_")) {
+      const className = name.slice(6);
+      const args = argExprs.map(a => this.evalExpr(a));
+      return this.execNew(className, args, line);
+    }
+
+    // Handle C++ delete: __delete
+    if (name === "__delete") {
+      const args = argExprs.map(a => this.evalExpr(a));
+      this.execDelete(args[0], line);
+      return { value: 0, type: { base: "void", pointerLevel: 0, isStruct: false } };
+    }
+
+    // Handle method calls: __method_arrow_name or __method_dot_name
+    if (name.startsWith("__method_arrow_") || name.startsWith("__method_dot_")) {
+      const isArrow = name.startsWith("__method_arrow_");
+      const methodName = name.slice(isArrow ? 15 : 13);
+      const allArgs = argExprs.map(a => this.evalExpr(a));
+      const obj = allArgs[0];  // first arg is the object/pointer
+      const methodArgs = allArgs.slice(1);
+
+      if (obj.value === null) {
+        throw new InterpreterError("Null pointer dereference in method call", line);
+      }
+
+      const addr = obj.value as number;
+      return this.dispatchMethod(addr, methodName, methodArgs, line);
+    }
+
     const args = argExprs.map(a => this.evalExpr(a));
 
     switch (name) {
@@ -569,6 +779,223 @@ export class Interpreter {
   private isTruthy(val: RuntimeValue): boolean {
     if (val.value === null) return false;
     return val.value !== 0;
+  }
+
+  // --- C++ Class Support ---
+
+  private registerClass(node: ClassDefNode) {
+    const classInfo: ClassInfo = {
+      name: node.name,
+      baseClass: node.baseClass,
+      fields: [],
+      methods: new Map(),
+      vtable: new Map(),
+      constructors: [],
+      hasVirtualMethods: false,
+    };
+
+    // Inherit from base class if any
+    if (node.baseClass) {
+      const base = this.classRegistry.get(node.baseClass);
+      if (base) {
+        // Copy base fields
+        for (const f of base.fields) {
+          classInfo.fields.push({ ...f });
+        }
+        // Copy base methods
+        for (const [name, info] of base.methods) {
+          classInfo.methods.set(name, { ...info });
+        }
+        // Copy vtable
+        for (const [name, cls] of base.vtable) {
+          classInfo.vtable.set(name, cls);
+        }
+        if (base.hasVirtualMethods) classInfo.hasVirtualMethods = true;
+      }
+    }
+
+    // Process sections
+    for (const section of node.sections) {
+      for (const member of section.members) {
+        if (member.kind === "FieldDecl") {
+          classInfo.fields.push({
+            name: member.name,
+            type: member.fieldType,
+            access: section.access,
+          });
+        } else if (member.kind === "MethodDef") {
+          if (member.isConstructor) {
+            classInfo.constructors.push(member);
+          } else if (member.isDestructor) {
+            classInfo.destructor = member;
+          } else {
+            if (member.isVirtual || member.isPureVirtual) {
+              classInfo.hasVirtualMethods = true;
+            }
+            classInfo.methods.set(member.name, {
+              node: member,
+              access: section.access,
+              isVirtual: member.isVirtual || member.isPureVirtual,
+              className: node.name,
+            });
+            // Update vtable: this class's override
+            if (member.isVirtual || member.isPureVirtual || classInfo.vtable.has(member.name)) {
+              classInfo.vtable.set(member.name, node.name);
+            }
+          }
+        }
+      }
+    }
+
+    this.classRegistry.set(node.name, classInfo);
+
+    // Also register as a StructDefNode so sizeOfType and heap mapping work
+    const structFields = classInfo.fields.map(f => ({ name: f.name, fieldType: f.type }));
+    this.structDefs.set(node.name, {
+      kind: "StructDef",
+      name: node.name,
+      fields: structFields,
+      line: node.line,
+      column: node.column,
+    });
+  }
+
+  private execNew(className: string, args: RuntimeValue[], line: number): RuntimeValue {
+    const classInfo = this.classRegistry.get(className);
+    if (!classInfo) {
+      // Fallback: treat as struct malloc
+      const structDef = this.structDefs.get(className);
+      if (structDef) {
+        let size = 0;
+        for (const f of structDef.fields) size += sizeOfType(f.fieldType, this.structDefs);
+        const addr = this.memory.malloc(Math.max(size, 8), className);
+        return { value: addr, type: { base: className, pointerLevel: 1, isStruct: true, isClass: true } };
+      }
+      throw new InterpreterError(`Unknown class '${className}'`, line);
+    }
+
+    const baseClassFields = classInfo.baseClass
+      ? this.classRegistry.get(classInfo.baseClass)?.fields.map(f => f.name)
+      : undefined;
+
+    const addr = this.memory.mallocObject(
+      className,
+      classInfo.fields.map(f => ({ name: f.name, type: f.type })),
+      classInfo.hasVirtualMethods,
+      baseClassFields,
+    );
+
+    // Call constructor if exists
+    if (classInfo.constructors.length > 0) {
+      // Find best matching constructor by param count
+      const ctor = classInfo.constructors.find(c => c.params.length === args.length)
+        || classInfo.constructors[0];
+      if (ctor) {
+        this.callMethod(addr, className, ctor, args, line);
+      }
+    }
+
+    return { value: addr, type: { base: className, pointerLevel: 1, isStruct: true, isClass: true } };
+  }
+
+  private execDelete(ptr: RuntimeValue, line: number) {
+    if (ptr.value === null) return;
+    const addr = ptr.value as number;
+    const block = this.memory.getHeapBlock(addr);
+    if (!block) return;
+
+    const className = block.className || block.typeName;
+    const classInfo = this.classRegistry.get(className);
+
+    if (classInfo) {
+      // Call destructor chain (derived → base)
+      this.callDestructorChain(addr, classInfo, line);
+    }
+
+    this.memory.free(addr);
+  }
+
+  private callDestructorChain(addr: number, classInfo: ClassInfo, line: number) {
+    // Derived destructor first
+    if (classInfo.destructor) {
+      this.callMethod(addr, classInfo.name, classInfo.destructor, [], line);
+    }
+    // Then base class destructor
+    if (classInfo.baseClass) {
+      const base = this.classRegistry.get(classInfo.baseClass);
+      if (base) {
+        this.callDestructorChain(addr, base, line);
+      }
+    }
+  }
+
+  private callMethod(addr: number, className: string, method: MethodDefNode, args: RuntimeValue[], line: number): RuntimeValue {
+    if (!method.body) {
+      return { value: 0, type: method.returnType };
+    }
+
+    const scopeName = `${className}::${method.name}`;
+    this.memory.pushScope(scopeName, line);
+
+    // Bind `this` pointer
+    this.memory.declareVar("this", { base: className, pointerLevel: 1, isStruct: true, isClass: true },
+      { value: addr, type: { base: className, pointerLevel: 1, isStruct: true, isClass: true } });
+
+    // Bind parameters
+    for (let i = 0; i < method.params.length; i++) {
+      const param = method.params[i];
+      const val = args[i] || { value: 0, type: param.paramType };
+      this.memory.declareVar(param.name, param.paramType, { ...val, type: param.paramType });
+    }
+
+    // Process initializer list (for constructors)
+    if (method.initializerList) {
+      for (const init of method.initializerList) {
+        const val = this.evalExpr(init.value);
+        this.memory.setHeapField(addr, init.field, val);
+      }
+    }
+
+    try {
+      this.execBlock(method.body);
+    } catch (e) {
+      if (e instanceof ReturnSignal) {
+        this.memory.popScope();
+        return e.value;
+      }
+      this.memory.popScope();
+      throw e;
+    }
+
+    this.memory.popScope();
+    return { value: 0, type: method.returnType };
+  }
+
+  private dispatchMethod(addr: number, methodName: string, args: RuntimeValue[], line: number): RuntimeValue {
+    const block = this.memory.getHeapBlock(addr);
+    if (!block) {
+      throw new InterpreterError(`Invalid object at address 0x${addr.toString(16)}`, line);
+    }
+
+    const className = block.className || block.typeName;
+    const classInfo = this.classRegistry.get(className);
+    if (!classInfo) {
+      throw new InterpreterError(`No class info for '${className}'`, line);
+    }
+
+    // Virtual dispatch: look up the most-derived implementation
+    let resolvedClassName = className;
+    if (classInfo.vtable.has(methodName)) {
+      resolvedClassName = classInfo.vtable.get(methodName)!;
+    }
+
+    const resolvedClass = this.classRegistry.get(resolvedClassName) || classInfo;
+    const methodInfo = resolvedClass.methods.get(methodName) || classInfo.methods.get(methodName);
+    if (!methodInfo) {
+      throw new InterpreterError(`Method '${methodName}' not found on class '${className}'`, line);
+    }
+
+    return this.callMethod(addr, resolvedClassName, methodInfo.node, args, line);
   }
 }
 

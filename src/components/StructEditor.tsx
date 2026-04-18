@@ -10,6 +10,7 @@ import {
 import CodeMirror from "@uiw/react-codemirror";
 import { cpp } from "@codemirror/lang-cpp";
 import { useCanvasStore } from "../store/canvasStore";
+import type { CStruct } from "../types";
 import {
   parseStruct,
   validateStructCode,
@@ -41,32 +42,81 @@ export default function StructEditor({ onClose, editStructName }: Props) {
     ? structDefinitions.find((s) => s.name === editStructName)
     : null;
 
+  const reconstructCode = (s: CStruct): string => {
+    if (s.isClass) {
+      // Reconstruct C++ class code
+      const keyword = "class";
+      const inheritance = s.baseClass ? ` : public ${s.baseClass}` : "";
+      const lines: string[] = [];
+      lines.push(`${keyword} ${s.name}${inheritance} {`);
+
+      // Group fields by access level
+      let currentAccess: string | null = null;
+      const defaultAccess = "private";
+
+      for (const f of s.fields) {
+        const access = f.accessLevel || defaultAccess;
+        if (access !== currentAccess) {
+          currentAccess = access;
+          lines.push(`${access}:`);
+        }
+        let fieldDef = `  ${f.type}`;
+        if (f.isPointer) fieldDef += "*";
+        fieldDef += ` ${f.name}`;
+        if (f.isArray) fieldDef += `[${f.arraySize}]`;
+        fieldDef += ";";
+        lines.push(fieldDef);
+      }
+
+      // Add methods
+      if (s.methods) {
+        for (const m of s.methods) {
+          if (m.accessLevel !== currentAccess) {
+            currentAccess = m.accessLevel;
+            lines.push(`${currentAccess}:`);
+          }
+          let methodDef = "  ";
+          if (m.isVirtual) methodDef += "virtual ";
+          if (m.isStatic) methodDef += "static ";
+          if (m.isConstructor) {
+            methodDef += `${m.name}(${m.parameters.map(p => `${p.type} ${p.name}`).join(", ")})`;
+          } else if (m.isDestructor) {
+            methodDef += `${m.name}()`;
+          } else {
+            methodDef += `${m.returnType} ${m.name}(${m.parameters.map(p => `${p.type} ${p.name}`).join(", ")})`;
+          }
+          if (m.isConst) methodDef += " const";
+          if (m.isPureVirtual) methodDef += " = 0";
+          methodDef += ";";
+          lines.push(methodDef);
+        }
+      }
+
+      lines.push("};");
+      return lines.join("\n");
+    }
+
+    // Reconstruct C struct code
+    if (s.typedef) {
+      return `typedef struct ${s.name} {\n${s.fields.map(f => {
+        let d = `  ${f.type}`;
+        if (f.isPointer) d += "*";
+        d += ` ${f.name}`;
+        if (f.isArray) d += `[${f.arraySize}]`;
+        return d + ";";
+      }).join("\n")}\n} ${s.typedef};`;
+    }
+    return `struct ${s.name} {\n${s.fields.map(f => {
+      let d = `  ${f.type}`;
+      if (f.isPointer) d += "*";
+      d += ` ${f.name}`;
+      if (f.isArray) d += `[${f.arraySize}]`;
+      return d + ";";
+    }).join("\n")}\n};`;
+  };
+
   const defaultCode = existingStruct
-    ? existingStruct.typedef
-      ? `typedef struct ${existingStruct.name} {
-${existingStruct.fields
-  .map((f) => {
-    let fieldDef = `  ${f.type}`;
-    if (f.isPointer) fieldDef += "*";
-    fieldDef += ` ${f.name}`;
-    if (f.isArray) fieldDef += `[${f.arraySize}]`;
-    fieldDef += ";";
-    return fieldDef;
-  })
-  .join("\n")}
-} ${existingStruct.typedef};`
-      : `struct ${existingStruct.name} {
-${existingStruct.fields
-  .map((f) => {
-    let fieldDef = `  ${f.type}`;
-    if (f.isPointer) fieldDef += "*";
-    fieldDef += ` ${f.name}`;
-    if (f.isArray) fieldDef += `[${f.arraySize}]`;
-    fieldDef += ";";
-    return fieldDef;
-  })
-  .join("\n")}
-};`
+    ? reconstructCode(existingStruct)
     : `typedef struct Node {
   int data;
   struct Node* next;
@@ -233,8 +283,15 @@ ${existingStruct.fields
           <div className="flex items-center gap-3">
             <FileCode size={20} strokeWidth={2.5} />
             <h2 className="text-sm font-mono font-heading tracking-tight">
-              {editStructName ? editStructName : "STRUCT"}
+              {editStructName
+                ? editStructName
+                : "STRUCT / CLASS"}
             </h2>
+            {existingStruct?.isClass && (
+              <span className="text-[9px] border border-black/40 px-1.5 py-0.5 rounded font-heading bg-white/30">
+                class
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
