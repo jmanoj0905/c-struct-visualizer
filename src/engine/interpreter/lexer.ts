@@ -15,6 +15,7 @@ const KEYWORDS = new Set([
   "int", "float", "double", "char", "void", "long", "short", "unsigned", "signed",
   "struct", "typedef", "if", "else", "while", "for", "do", "return",
   "break", "continue", "sizeof", "NULL", "switch", "case", "default",
+  // NOTE: switch/case/default/enum are lexed but not yet parsed or executed.
   "const", "static", "enum",
   // C++ keywords
   "class", "public", "private", "protected", "virtual", "override", "final",

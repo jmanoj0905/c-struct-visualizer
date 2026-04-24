@@ -22,6 +22,7 @@ interface SidebarProps {
 }
 
 // Template data structures
+// eslint-disable-next-line react-refresh/only-export-components
 export const templates = {
   singlyLinkedList: {
     name: "Singly Linked List",
@@ -277,6 +278,7 @@ export const templates = {
 };
 
 // Export template loading function for use in App.tsx
+// eslint-disable-next-line react-refresh/only-export-components
 export const loadTemplate = (templateKey: keyof typeof templates) => {
   const template = templates[templateKey];
   const { addStructDefinition, addInstance, addConnection, updateFieldValue } = useCanvasStore.getState();

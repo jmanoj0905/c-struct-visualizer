@@ -328,6 +328,28 @@ export class Interpreter {
       }
     }
 
+    // Stack-declared array: int arr[N]; — back with a contiguous heap slot block
+    // and let the variable hold the base address (decay-to-pointer semantics).
+    if (node.varType.arraySize !== undefined) {
+      const elemType: CType = { ...node.varType, arraySize: undefined };
+      const count = node.varType.arraySize;
+      const baseAddr = this.memory.mallocArray(elemType, count, `${node.name}[${count}]`);
+
+      // Apply initializer if present
+      if (node.init && node.init.kind === "CallExpr" && node.init.callee === "__array_init") {
+        const vals = node.init.args.map(a => this.evalExpr(a));
+        for (let i = 0; i < Math.min(vals.length, count); i++) {
+          this.memory.setArrayElement(
+            baseAddr + i * (this.memory.getHeapBlock(baseAddr)?.elementSize ?? 0),
+            vals[i],
+          );
+        }
+      }
+
+      this.memory.declareVar(node.name, node.varType, { value: baseAddr, type: node.varType });
+      return;
+    }
+
     let initVal: RuntimeValue | undefined;
     if (node.init) {
       if (node.init.kind === "CallExpr" && node.init.callee === "__array_init") {
@@ -407,6 +429,8 @@ export class Interpreter {
         return this.evalAssign(expr.target, this.evalExpr(expr.value));
 
       case "CompoundAssignExpr": {
+        // Known limitation: lvalue is evaluated twice (once for read, once inside evalAssign),
+        // so side effects in the lvalue (e.g., arr[i++] += 1) execute twice. Rare in practice.
         const left = this.evalExpr(expr.target);
         const right = this.evalExpr(expr.value);
         const op = expr.op.slice(0, -1); // "+=" -> "+"
@@ -563,17 +587,29 @@ export class Interpreter {
       case "ArrayAccess": {
         const obj = this.evalExpr(expr.object);
         const idx = this.evalExpr(expr.index);
-        // Pointer arithmetic: base + index * element_size
-        if (obj.type.pointerLevel > 0 && obj.value !== null) {
-          const elemType: CType = { ...obj.type, pointerLevel: obj.type.pointerLevel - 1 };
-          const elemSize = sizeOfType(elemType, this.structDefs);
-          const addr = (obj.value as number) + (idx.value as number) * elemSize;
-          const block = this.memory.getHeapBlock(addr);
-          if (block) {
-            return { value: addr, type: elemType, address: addr };
-          }
+        if (obj.value === null) return { value: 0, type: intType() };
+
+        // Determine element type. Array-typed (arraySize set) decays to pointer-to-element.
+        let elemType: CType;
+        if (obj.type.arraySize !== undefined) {
+          elemType = { ...obj.type, arraySize: undefined };
+        } else if (obj.type.pointerLevel > 0) {
+          elemType = { ...obj.type, pointerLevel: obj.type.pointerLevel - 1 };
+        } else {
+          return { value: 0, type: intType() };
         }
-        return { value: 0, type: intType() };
+
+        const elemSize = sizeOfType(elemType, this.structDefs);
+        const addr = (obj.value as number) + (idx.value as number) * elemSize;
+
+        // Try contiguous-array slot first
+        const elem = this.memory.getArrayElement(addr);
+        if (elem) return { ...elem, address: addr };
+
+        // Fallback: legacy per-block model (struct arrays via malloc)
+        const block = this.memory.getHeapBlock(addr);
+        if (block) return { value: addr, type: elemType, address: addr };
+        return { value: 0, type: elemType, address: addr };
       }
 
       case "TernaryExpr": {
@@ -644,7 +680,26 @@ export class Interpreter {
       return value;
     }
     if (target.kind === "ArrayAccess") {
-      // TODO: array element assignment
+      const obj = this.evalExpr(target.object);
+      const idx = this.evalExpr(target.index);
+      if (obj.value === null) return value;
+
+      let elemType: CType;
+      if (obj.type.arraySize !== undefined) {
+        elemType = { ...obj.type, arraySize: undefined };
+      } else if (obj.type.pointerLevel > 0) {
+        elemType = { ...obj.type, pointerLevel: obj.type.pointerLevel - 1 };
+      } else {
+        return value;
+      }
+
+      const elemSize = sizeOfType(elemType, this.structDefs);
+      const addr = (obj.value as number) + (idx.value as number) * elemSize;
+
+      // Prefer slot-array storage; fall back to legacy heap-value write.
+      if (!this.memory.setArrayElement(addr, value)) {
+        this.memory.setHeapValue(addr, value);
+      }
       return value;
     }
     return value;

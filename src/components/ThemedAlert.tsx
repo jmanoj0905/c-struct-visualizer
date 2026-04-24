@@ -50,6 +50,8 @@ function ThemedAlert({ alert, onClose, isLatest }: ThemedAlertProps) {
 
       return () => clearTimeout(timer);
     }
+    // handleClose is recreated each render — including it would reset the auto-dismiss timer on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alert.duration, alert.type]);
 
   // Handle Enter key - only for the latest alert
@@ -70,6 +72,8 @@ function ThemedAlert({ alert, onClose, isLatest }: ThemedAlertProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+    // handleClose/handleConfirm are recreated each render — including them would rebind the listener every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alert.type, isLatest]);
 
   const getAlertStyles = () => {

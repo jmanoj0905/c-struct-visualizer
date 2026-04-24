@@ -8,6 +8,7 @@ interface AlertWithId extends AlertConfig {
 let alertIdCounter = 0;
 let addAlertCallback: ((alert: AlertConfig) => void) | null = null;
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const showAlert = (alert: AlertConfig) => {
   if (addAlertCallback) {
     addAlertCallback(alert);

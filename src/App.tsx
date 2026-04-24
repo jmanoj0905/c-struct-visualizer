@@ -926,6 +926,8 @@ function FlowCanvas() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+    // undo/redo/setNodes are stable store setters — including them would rebind the listener every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     nodes,
     removeInstance,

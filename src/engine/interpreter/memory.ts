@@ -31,6 +31,9 @@ interface HeapBlock {
   className?: string;          // set for C++ class objects
   hasVtable?: boolean;         // true if object has virtual methods
   baseClassFields?: string[];  // field names inherited from base class
+  elements?: RuntimeValue[];   // for array blocks (contiguous slots)
+  elementSize?: number;        // bytes per element, for offset->index mapping
+  elementType?: CType;         // element CType, for default init
 }
 
 export class Memory {
@@ -152,6 +155,61 @@ export class Memory {
     if (block) block.freed = true;
   }
 
+  // Allocate a contiguous array block. Each element gets its own slot.
+  mallocArray(elementType: CType, count: number, typeName?: string): number {
+    const elemSize = sizeOfType(elementType, this.structDefs);
+    const totalSize = Math.max(elemSize * count, 8);
+    const addr = this.allocAddress(totalSize);
+    const elements: RuntimeValue[] = [];
+    for (let i = 0; i < count; i++) {
+      elements.push({
+        value: elementType.pointerLevel > 0 ? null : 0,
+        type: elementType,
+      });
+    }
+    const block: HeapBlock = {
+      address: addr,
+      typeName: typeName || `${elementType.base}[${count}]`,
+      isStruct: false,
+      fields: new Map(),
+      freed: false,
+      elements,
+      elementSize: elemSize,
+      elementType,
+    };
+    this.heap.set(addr, block);
+    return addr;
+  }
+
+  // Resolve an address that may point INTO an array block.
+  // Returns the owning block + element index, or undefined.
+  findArrayElement(addr: number): { block: HeapBlock; index: number } | undefined {
+    for (const [base, block] of this.heap) {
+      if (!block.elements || !block.elementSize || block.freed) continue;
+      if (addr < base) continue;
+      const offset = addr - base;
+      if (offset % block.elementSize !== 0) continue;
+      const idx = offset / block.elementSize;
+      if (idx >= block.elements.length) continue;
+      return { block, index: idx };
+    }
+    return undefined;
+  }
+
+  getArrayElement(addr: number): RuntimeValue | undefined {
+    const found = this.findArrayElement(addr);
+    return found ? found.block.elements![found.index] : undefined;
+  }
+
+  setArrayElement(addr: number, value: RuntimeValue): boolean {
+    const found = this.findArrayElement(addr);
+    if (!found) return false;
+    // Preserve declared element type; only the value changes.
+    const elemType = found.block.elementType ?? value.type;
+    found.block.elements![found.index] = { value: value.value, type: elemType };
+    return true;
+  }
+
   getHeapField(addr: number, field: string): RuntimeValue | undefined {
     const block = this.heap.get(addr);
     if (!block || block.freed) return undefined;
@@ -254,6 +312,19 @@ export class Memory {
           pointerLevel: fval.type.pointerLevel,
           pointsTo: isPointer && fval.value !== null ? (fval.value as number) : undefined,
         };
+      }
+      if (block.elements) {
+        for (let i = 0; i < block.elements.length; i++) {
+          const ev = block.elements[i];
+          const isPointer = ev.type.pointerLevel > 0;
+          fields[`[${i}]`] = {
+            value: isPointer ? (ev.value === null ? "NULL" : `0x${(ev.value as number).toString(16)}`) : String(ev.value ?? 0),
+            type: typeToString(ev.type),
+            isPointer,
+            pointerLevel: ev.type.pointerLevel,
+            pointsTo: isPointer && ev.value !== null ? (ev.value as number) : undefined,
+          };
+        }
       }
       const obj: HeapObject = {
         address: block.address,
