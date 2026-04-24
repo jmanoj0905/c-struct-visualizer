@@ -67,6 +67,7 @@ export type ASTNode =
   | BlockNode
   | BreakStmtNode
   | ContinueStmtNode
+  | SwitchStmtNode
   | MethodDefNode;
 
 export type ExprNode =
@@ -106,6 +107,12 @@ export interface DoWhileStmtNode extends BaseNode { kind: "DoWhileStmt"; body: A
 export interface BlockNode extends BaseNode { kind: "Block"; body: ASTNode[]; }
 export interface BreakStmtNode extends BaseNode { kind: "BreakStmt"; }
 export interface ContinueStmtNode extends BaseNode { kind: "ContinueStmt"; }
+
+export interface SwitchCaseNode {
+  test: ExprNode | null; // null = default
+  body: ASTNode[];
+}
+export interface SwitchStmtNode extends BaseNode { kind: "SwitchStmt"; discriminant: ExprNode; cases: SwitchCaseNode[]; }
 
 export interface NumberLitNode extends BaseNode { kind: "NumberLit"; value: number; isFloat: boolean; }
 export interface StringLitNode extends BaseNode { kind: "StringLit"; value: string; }

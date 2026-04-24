@@ -18,11 +18,12 @@ describe("lexer", () => {
     }
   });
 
-  it("lexes switch/case/default keywords (parser support pending)", () => {
-    const values = tokenize("switch case default").map(t => t.value);
+  it("lexes switch/case/default/enum keywords", () => {
+    const values = tokenize("switch case default enum").map(t => t.value);
     expect(values).toContain("switch");
     expect(values).toContain("case");
     expect(values).toContain("default");
+    expect(values).toContain("enum");
   });
 
   it("lexes string and char literals with escapes", () => {

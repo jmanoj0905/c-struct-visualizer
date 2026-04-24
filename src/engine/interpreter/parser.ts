@@ -5,6 +5,7 @@ import type {
   ASTNode, ExprNode, CType, ProgramNode, FunctionDefNode, StructDefNode,
   VarDeclNode, BlockNode, ReturnStmtNode, ExprStmtNode, IfStmtNode,
   WhileStmtNode, ForStmtNode, DoWhileStmtNode, BreakStmtNode, ContinueStmtNode,
+  SwitchStmtNode, SwitchCaseNode,
   ClassDefNode, ClassSection, FieldDeclNode, MethodDefNode,
 } from "./ast";
 
@@ -120,6 +121,19 @@ export class Parser {
   }
 
   private parseTopLevel(): ASTNode {
+    // enum definition at top level
+    if (this.is("Keyword", "enum")) {
+      const saved = this.pos;
+      this.advance(); // enum
+      if (this.is("Identifier")) this.advance();
+      if (this.is("Punct", "{")) {
+        this.pos = saved;
+        return this.parseEnum();
+      }
+      this.pos = saved;
+      // Otherwise fall through to parseDeclOrFuncDef (variable of enum type)
+    }
+
     // using namespace <name>;  — skip silently
     if (this.is("Keyword", "using")) {
       const { line, column } = this.cur();
@@ -682,32 +696,36 @@ export class Parser {
     const { line, column } = this.cur();
     // Skip const/static
     while (this.is("Keyword", "const") || this.is("Keyword", "static")) this.advance();
-    const type = this.parseType();
+    const baseType = this.parseType();
     const name = this.expect("Identifier").value;
 
     // Function definition
     if (this.is("Punct", "(")) {
-      return this.parseFunctionDef(type, name, line, column);
+      return this.parseFunctionDef(baseType, name, line, column);
     }
 
-    // Variable declaration (possibly with array)
+    // First declarator (name already consumed above)
+    const firstType = { ...baseType };
     if (this.match("Punct", "[")) {
-      if (this.is("Number")) {
-        type.arraySize = parseInt(this.advance().value);
-      }
+      if (this.is("Number")) firstType.arraySize = parseInt(this.advance().value);
       this.expect("Punct", "]");
     }
-    let init: ExprNode | undefined;
+    let firstInit: ExprNode | undefined;
     if (this.match("Punct", "=")) {
-      // Array initializer
-      if (this.is("Punct", "{")) {
-        init = this.parseArrayInitializer(line, column);
-      } else {
-        init = this.parseExpr();
-      }
+      firstInit = this.is("Punct", "{") ? this.parseArrayInitializer(line, column) : this.parseExpr();
     }
+    const decls: VarDeclNode[] = [{ kind: "VarDecl", name, varType: firstType, init: firstInit, line, column }];
+
+    // Additional declarators separated by comma
+    while (this.match("Punct", ",")) {
+      const t = { ...baseType };
+      while (this.is("Punct", "*")) { t.pointerLevel++; this.advance(); }
+      decls.push(this.parseSingleDeclarator(t, line, column));
+    }
+
     this.expect("Punct", ";");
-    return { kind: "VarDecl", name, varType: type, init, line, column } as VarDeclNode;
+    if (decls.length === 1) return decls[0];
+    return { kind: "Block", body: decls, line, column };
   }
 
   private parseArrayInitializer(line: number, column: number): ExprNode {
@@ -761,7 +779,21 @@ export class Parser {
       if (this.cur().value === "const") isConst = true;
       this.advance();
     }
-    if (this.is("Keyword", "struct")) {
+    if (this.is("Keyword", "enum")) {
+      this.advance(); // enum
+      if (this.is("Identifier")) this.advance(); // optional name
+      // Inline anonymous body — skip it
+      if (this.is("Punct", "{")) {
+        let depth = 1;
+        this.advance(); // {
+        while (depth > 0 && !this.is("EOF")) {
+          if (this.cur().value === "{") depth++;
+          else if (this.cur().value === "}") depth--;
+          this.advance();
+        }
+      }
+      base = "int"; // enum treated as int at runtime
+    } else if (this.is("Keyword", "struct")) {
       this.advance();
       isStruct = true;
       base = this.expect("Identifier").value;
@@ -812,9 +844,22 @@ export class Parser {
     if (this.is("Keyword", "while")) return this.parseWhile();
     if (this.is("Keyword", "for")) return this.parseFor();
     if (this.is("Keyword", "do")) return this.parseDoWhile();
+    if (this.is("Keyword", "switch")) return this.parseSwitch();
     if (this.is("Keyword", "return")) return this.parseReturn();
     if (this.is("Keyword", "break")) { this.advance(); this.expect("Punct", ";"); return { kind: "BreakStmt", line, column } as BreakStmtNode; }
     if (this.is("Keyword", "continue")) { this.advance(); this.expect("Punct", ";"); return { kind: "ContinueStmt", line, column } as ContinueStmtNode; }
+
+    // Inline enum definition inside a function body
+    if (this.is("Keyword", "enum")) {
+      const saved = this.pos;
+      this.advance(); // enum
+      if (this.is("Identifier")) this.advance();
+      if (this.is("Punct", "{")) {
+        this.pos = saved;
+        return this.parseEnum();
+      }
+      this.pos = saved;
+    }
 
     // Local variable declaration? Check if it starts with a type
     if (this.looksLikeDecl()) {
@@ -834,7 +879,7 @@ export class Parser {
 
     const tok = this.peek(offset);
     if (tok.type === "Keyword" && ["int", "float", "double", "char", "void", "long", "short", "unsigned", "signed", "bool"].includes(tok.value)) return true;
-    if (tok.type === "Keyword" && (tok.value === "struct" || tok.value === "class")) return true;
+    if (tok.type === "Keyword" && (tok.value === "struct" || tok.value === "class" || tok.value === "enum")) return true;
     // Typedef'd struct name used as type (e.g., Node* head)
     if (tok.type === "Identifier" && this.isKnownType(tok.value)) {
       // Make sure the next token after the name (and optional *) is an identifier (the var name)
@@ -845,30 +890,91 @@ export class Parser {
     return false;
   }
 
+  private parseSingleDeclarator(baseType: CType, line: number, column: number): VarDeclNode {
+    const type = { ...baseType };
+    const name = this.expect("Identifier").value;
+    if (this.match("Punct", "[")) {
+      if (this.is("Number")) type.arraySize = parseInt(this.advance().value);
+      this.expect("Punct", "]");
+    }
+    let init: ExprNode | undefined;
+    if (this.match("Punct", "=")) {
+      init = this.is("Punct", "{") ? this.parseArrayInitializer(line, column) : this.parseExpr();
+    }
+    return { kind: "VarDecl", name, varType: type, init, line, column };
+  }
+
   private parseLocalDecl(): ASTNode {
     const { line, column } = this.cur();
     while (this.is("Keyword", "const") || this.is("Keyword", "static")) this.advance();
-    const type = this.parseType();
-    const name = this.expect("Identifier").value;
 
-    // Array
-    if (this.match("Punct", "[")) {
-      if (this.is("Number")) {
-        type.arraySize = parseInt(this.advance().value);
-      }
-      this.expect("Punct", "]");
-    }
-
-    let init: ExprNode | undefined;
-    if (this.match("Punct", "=")) {
+    // Inline enum definition: enum Color { RED, GREEN } — emit constants as VarDecls
+    if (this.is("Keyword", "enum")) {
+      const saved = this.pos;
+      this.advance(); // enum
+      if (this.is("Identifier")) this.advance();
       if (this.is("Punct", "{")) {
-        init = this.parseArrayInitializer(line, column);
-      } else {
-        init = this.parseExpr();
+        this.pos = saved;
+        return this.parseEnum();
       }
+      this.pos = saved;
     }
+
+    const baseType = this.parseType();
+    const decls: VarDeclNode[] = [this.parseSingleDeclarator(baseType, line, column)];
+
+    while (this.match("Punct", ",")) {
+      const t = { ...baseType };
+      while (this.is("Punct", "*")) { t.pointerLevel++; this.advance(); }
+      decls.push(this.parseSingleDeclarator(t, line, column));
+    }
+
     this.expect("Punct", ";");
-    return { kind: "VarDecl", name, varType: type, init, line, column } as VarDeclNode;
+    if (decls.length === 1) return decls[0];
+    return { kind: "Block", body: decls, line, column };
+  }
+
+  private parseEnum(): ASTNode {
+    const { line, column } = this.cur();
+    this.advance(); // enum
+    if (this.is("Identifier")) this.advance(); // optional name
+
+    // Forward declaration: enum Foo; — skip
+    if (!this.is("Punct", "{")) {
+      this.match("Punct", ";");
+      return { kind: "Block", body: [], line, column };
+    }
+
+    this.expect("Punct", "{");
+    const decls: VarDeclNode[] = [];
+    let nextValue = 0;
+
+    while (!this.is("Punct", "}") && !this.is("EOF")) {
+      if (this.match("Punct", ",")) continue;
+      if (!this.is("Identifier")) { this.advance(); continue; }
+      const constName = this.advance().value;
+      let value = nextValue;
+      if (this.match("Punct", "=")) {
+        const valExpr = this.parseAssignExpr();
+        if (valExpr.kind === "NumberLit") value = valExpr.value;
+      }
+      nextValue = value + 1;
+      decls.push({
+        kind: "VarDecl",
+        name: constName,
+        varType: { base: "int", pointerLevel: 0, isStruct: false },
+        init: { kind: "NumberLit", value, isFloat: false, line, column },
+        line,
+        column,
+      });
+    }
+
+    this.expect("Punct", "}");
+    this.match("Punct", ";");
+
+    if (decls.length === 0) return { kind: "Block", body: [], line, column };
+    if (decls.length === 1) return decls[0];
+    return { kind: "Block", body: decls, line, column };
   }
 
   private parseIf(): IfStmtNode {
@@ -935,6 +1041,45 @@ export class Parser {
     this.expect("Punct", ")");
     this.expect("Punct", ";");
     return { kind: "DoWhileStmt", body, condition, line, column };
+  }
+
+  private parseSwitch(): SwitchStmtNode {
+    const { line, column } = this.cur();
+    this.advance(); // switch
+    this.expect("Punct", "(");
+    const discriminant = this.parseExpr();
+    this.expect("Punct", ")");
+    this.expect("Punct", "{");
+
+    const cases: SwitchCaseNode[] = [];
+
+    while (!this.is("Punct", "}") && !this.is("EOF")) {
+      if (this.is("Keyword", "case")) {
+        this.advance(); // case
+        const test = this.parseExpr();
+        this.expect("Punct", ":");
+        const body: ASTNode[] = [];
+        while (!this.is("Keyword", "case") && !this.is("Keyword", "default") && !this.is("Punct", "}") && !this.is("EOF")) {
+          if (this.match("Punct", ";")) continue;
+          body.push(this.parseStatement());
+        }
+        cases.push({ test, body });
+      } else if (this.is("Keyword", "default")) {
+        this.advance(); // default
+        this.expect("Punct", ":");
+        const body: ASTNode[] = [];
+        while (!this.is("Keyword", "case") && !this.is("Keyword", "default") && !this.is("Punct", "}") && !this.is("EOF")) {
+          if (this.match("Punct", ";")) continue;
+          body.push(this.parseStatement());
+        }
+        cases.push({ test: null, body });
+      } else {
+        this.advance(); // skip unexpected token
+      }
+    }
+
+    this.expect("Punct", "}");
+    return { kind: "SwitchStmt", discriminant, cases, line, column };
   }
 
   private parseReturn(): ReturnStmtNode {

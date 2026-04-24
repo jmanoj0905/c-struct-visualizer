@@ -2,7 +2,7 @@
 
 import type {
   ASTNode, ExprNode, CType, ProgramNode, FunctionDefNode,
-  StructDefNode, BlockNode, ClassDefNode, MethodDefNode,
+  StructDefNode, BlockNode, ClassDefNode, MethodDefNode, SwitchStmtNode,
 } from "./ast";
 import { sizeOfType } from "./ast";
 import { Memory, type RuntimeValue } from "./memory";
@@ -106,12 +106,10 @@ export class Interpreter {
 
     this.memory = new Memory(this.structDefs);
 
-    // Phase 2: Execute global variable declarations
+    // Phase 2: Execute global variable declarations (including Block wrappers from enum/multi-decl)
     this.memory.pushScope("__global", 0);
     for (const node of program.body) {
-      if (node.kind === "VarDecl") {
-        this.execVarDecl(node);
-      }
+      this.execGlobalDecls(node);
     }
 
     // Phase 3: Call main()
@@ -205,6 +203,39 @@ export class Interpreter {
     }
   }
 
+  private execGlobalDecls(node: ASTNode) {
+    if (node.kind === "VarDecl") {
+      this.execVarDecl(node);
+    } else if (node.kind === "Block") {
+      for (const child of node.body) this.execGlobalDecls(child);
+    }
+  }
+
+  private execSwitch(node: SwitchStmtNode) {
+    this.recordStep(node.line);
+    const discriminant = this.evalExpr(node.discriminant);
+    const dv = discriminant.value;
+
+    // Find first matching case, then fall back to default
+    let startIdx = node.cases.findIndex(c => c.test !== null && this.evalExpr(c.test).value === dv);
+    if (startIdx === -1) {
+      startIdx = node.cases.findIndex(c => c.test === null);
+    }
+    if (startIdx === -1) return;
+
+    // Execute from startIdx with C-style fallthrough; BreakSignal exits the switch
+    outer: for (let i = startIdx; i < node.cases.length; i++) {
+      for (const stmt of node.cases[i].body) {
+        try {
+          this.execStatement(stmt);
+        } catch (e) {
+          if (e instanceof BreakSignal) break outer;
+          throw e;
+        }
+      }
+    }
+  }
+
   private execStatement(node: ASTNode) {
     switch (node.kind) {
       case "VarDecl":
@@ -291,6 +322,9 @@ export class Interpreter {
       case "ContinueStmt":
         this.recordStep(node.line);
         throw new ContinueSignal();
+      case "SwitchStmt":
+        this.execSwitch(node);
+        break;
       default:
         break;
     }
@@ -512,12 +546,20 @@ export class Interpreter {
         const addr = ptr.value as number;
         const block = this.memory.getHeapBlock(addr);
         if (block && block.isStruct) {
-          // Return the address as a "struct reference"
           return {
             value: addr,
             type: { base: ptr.type.base, pointerLevel: ptr.type.pointerLevel - 1, isStruct: true },
             address: addr,
           };
+        }
+        // Try array slot (handles pointer arithmetic into mallocArray blocks)
+        const elem = this.memory.getArrayElement(addr);
+        if (elem) return { ...elem, address: addr };
+        // Try stack variable (handles *p where p = &localVar)
+        const stackVarName = this.memory.findVarNameByAddr(addr);
+        if (stackVarName !== undefined) {
+          const stackVal = this.memory.getVar(stackVarName);
+          if (stackVal) return { ...stackVal, address: addr };
         }
         const val = this.memory.getHeapValue(addr);
         return val || { value: 0, type: { ...ptr.type, pointerLevel: ptr.type.pointerLevel - 1 } };
@@ -675,7 +717,14 @@ export class Interpreter {
     if (target.kind === "DerefExpr") {
       const ptr = this.evalExpr(target.operand);
       if (ptr.value !== null) {
-        this.memory.setHeapValue(ptr.value as number, value);
+        const addr = ptr.value as number;
+        // Write to stack variable if this is a stack address
+        const stackVarName = this.memory.findVarNameByAddr(addr);
+        if (stackVarName !== undefined) {
+          this.memory.setVar(stackVarName, value);
+        } else {
+          this.memory.setHeapValue(addr, value);
+        }
       }
       return value;
     }
@@ -703,6 +752,38 @@ export class Interpreter {
       return value;
     }
     return value;
+  }
+
+  // Extract string content from a RuntimeValue. Checks __str first, then heap block __str.
+  private getStr(val: RuntimeValue | undefined): string {
+    if (!val) return "";
+    const asStr = (val as unknown as { __str?: string }).__str;
+    if (typeof asStr === "string") return asStr;
+    if (val.value !== null && val.value !== undefined) {
+      const block = this.memory.getHeapBlock(val.value as number);
+      if (block) {
+        const blockStr = (block as unknown as { __str?: string }).__str;
+        if (typeof blockStr === "string") return blockStr;
+      }
+    }
+    return String(val.value ?? "");
+  }
+
+  // Detect malloc(N * sizeof(T)) and malloc(sizeof(T) * N) patterns for scalar types.
+  // Returns an array-slot block so pointer indexing works. Returns null if pattern doesn't match.
+  private tryMallocArray(sizeExpr: ExprNode): RuntimeValue | null {
+    if (sizeExpr.kind === "BinaryExpr" && sizeExpr.op === "*") {
+      const left = sizeExpr.left;
+      const right = sizeExpr.right;
+      const sizeofNode = right.kind === "SizeofExpr" ? right : left.kind === "SizeofExpr" ? left : null;
+      const countExpr = sizeofNode === right ? left : right;
+      if (sizeofNode && !sizeofNode.targetType.isStruct) {
+        const count = Math.max(1, Math.round(this.evalExpr(countExpr).value as number));
+        const addr = this.memory.mallocArray(sizeofNode.targetType, count);
+        return { value: addr, type: { base: sizeofNode.targetType.base, pointerLevel: 1, isStruct: false } };
+      }
+    }
+    return null;
   }
 
   private evalCall(name: string, argExprs: ExprNode[], line: number): RuntimeValue {
@@ -736,6 +817,24 @@ export class Interpreter {
       return this.dispatchMethod(addr, methodName, methodArgs, line);
     }
 
+    // Handle malloc/calloc before evaluating args to preserve sizeof type info
+    if (name === "malloc" && argExprs.length > 0) {
+      const result = this.tryMallocArray(argExprs[0]);
+      if (result) return result;
+    }
+
+    if (name === "calloc" && argExprs.length >= 2) {
+      const count = Math.max(1, Math.round(this.evalExpr(argExprs[0]).value as number ?? 1));
+      const sizeExpr = argExprs[1];
+      if (sizeExpr.kind === "SizeofExpr" && !sizeExpr.targetType.isStruct) {
+        const addr = this.memory.mallocArray(sizeExpr.targetType, count);
+        return { value: addr, type: { base: sizeExpr.targetType.base, pointerLevel: 1, isStruct: false } };
+      }
+      // Fallback: total-size malloc
+      const size = this.evalExpr(sizeExpr).value as number ?? 4;
+      return builtinMalloc([{ value: count * size, type: intType() }], this.memory, this.structDefs);
+    }
+
     const args = argExprs.map(a => this.evalExpr(a));
 
     switch (name) {
@@ -754,8 +853,6 @@ export class Interpreter {
           return line;
         });
       case "malloc": {
-        // Try to infer struct type from the cast context
-        // We look at sizeof arg to guess type
         let typeHint: string | undefined;
         if (argExprs.length > 0 && argExprs[0].kind === "SizeofExpr") {
           const sizeofType = argExprs[0].targetType;
@@ -766,6 +863,7 @@ export class Interpreter {
       case "free":
         return builtinFree(args, this.memory);
       case "calloc": {
+        // Reached only when the early-exit above didn't trigger (non-sizeof size arg)
         const count = args[0]?.value as number ?? 1;
         const size = args[1]?.value as number ?? 4;
         return builtinMalloc(
@@ -775,8 +873,84 @@ export class Interpreter {
       }
       case "atoi":
         return { value: parseInt(String(args[0]?.value ?? "0")) || 0, type: intType() };
+      case "atof":
+        return { value: parseFloat(String(args[0]?.value ?? "0")) || 0, type: { base: "double", pointerLevel: 0, isStruct: false } };
       case "abs":
         return { value: Math.abs(args[0]?.value as number ?? 0), type: intType() };
+      case "strlen": {
+        const s = this.getStr(args[0]);
+        return { value: s.length, type: intType() };
+      }
+      case "strcmp": {
+        const a = this.getStr(args[0]);
+        const b = this.getStr(args[1]);
+        return { value: a < b ? -1 : a > b ? 1 : 0, type: intType() };
+      }
+      case "strncmp": {
+        const a = this.getStr(args[0]).slice(0, args[2]?.value as number ?? 0);
+        const b = this.getStr(args[1]).slice(0, args[2]?.value as number ?? 0);
+        return { value: a < b ? -1 : a > b ? 1 : 0, type: intType() };
+      }
+      case "strcpy":
+      case "strncpy": {
+        const src = this.getStr(args[1]);
+        const dest = args[0];
+        if (dest && dest.value !== null) {
+          // Attach the copied string to the heap block so future getStr works
+          const block = this.memory.getHeapBlock(dest.value as number);
+          if (block) (block as unknown as { __str: string }).__str = src;
+        }
+        // Return dest (with __str attached for chained use)
+        const rv: RuntimeValue = { ...dest, type: dest?.type ?? { base: "char", pointerLevel: 1, isStruct: false } };
+        (rv as unknown as { __str: string }).__str = src;
+        return rv;
+      }
+      case "strcat":
+      case "strncat": {
+        const destVal = args[0];
+        const srcStr = this.getStr(args[1]);
+        const existing = this.getStr(destVal);
+        const combined = existing + srcStr;
+        if (destVal && destVal.value !== null) {
+          const block = this.memory.getHeapBlock(destVal.value as number);
+          if (block) (block as unknown as { __str: string }).__str = combined;
+        }
+        const rv: RuntimeValue = { ...destVal, type: destVal?.type ?? { base: "char", pointerLevel: 1, isStruct: false } };
+        (rv as unknown as { __str: string }).__str = combined;
+        return rv;
+      }
+      case "strdup": {
+        const src = this.getStr(args[0]);
+        const addr = this.memory.allocStringLiteral(src);
+        const rv: RuntimeValue = { value: addr, type: { base: "char", pointerLevel: 1, isStruct: false } };
+        (rv as unknown as { __str: string }).__str = src;
+        return rv;
+      }
+      case "sprintf": {
+        // sprintf(buf, fmt, ...) — format into buffer, return char count
+        const fmtArg = args[1];
+        const fmtArgs = [fmtArg, ...args.slice(2)];
+        let output = "";
+        builtinPrintf(fmtArgs, this.memory, (t) => { output += t; });
+        const dest = args[0];
+        if (dest && dest.value !== null) {
+          const block = this.memory.getHeapBlock(dest.value as number);
+          if (block) (block as unknown as { __str: string }).__str = output;
+        }
+        const rv: RuntimeValue = { ...dest, type: dest?.type ?? { base: "char", pointerLevel: 1, isStruct: false } };
+        (rv as unknown as { __str: string }).__str = output;
+        return rv;
+      }
+      case "puts": {
+        const s = this.getStr(args[0]);
+        this.consoleOutput += s + "\n";
+        return { value: 1, type: intType() };
+      }
+      case "putchar": {
+        const ch = args[0]?.value as number ?? 0;
+        this.consoleOutput += String.fromCharCode(ch);
+        return { value: ch, type: intType() };
+      }
       default: {
         // User-defined function
         const func = this.funcDefs.get(name);
